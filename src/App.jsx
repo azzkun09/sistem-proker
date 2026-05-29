@@ -302,7 +302,7 @@ export default function App() {
     };
   }, [firebaseUser]);
 
-  // --- KAMERA INTERAKTIF ---
+  // --- KAMERA INTERAKTIF (FULL SCREEN MODAL) ---
   const startCamera = async () => {
     setIsCameraActive(true);
     try {
@@ -462,7 +462,7 @@ export default function App() {
   };
 
   const handleDeleteProgram = (id) => {
-    requestConfirm("Hapus Pengajuan?", "Pengajuan program ini akan dihapus secara permanen.", () => {
+    requestConfirm("Hapus Program?", "Apakah Anda yakin ingin menghapus data program ini secara permanen?", () => {
       deleteDoc(getProgramRef(id))
         .then(() => showNotification('Data program berhasil dihapus secara permanen.'))
         .catch(err => showNotification('Gagal menghapus program.', 'error'));
@@ -707,7 +707,35 @@ export default function App() {
 
   // --- RENDERING VIEWS ---
 
-  // 1. View Laporan Print Out (Tampil Jika Tombol Ekspor Ditekan)
+  // 1. FULL SCREEN CAMERA OVERLAY (Tampil secara independen menutupi seluruh layar)
+  if (isCameraActive) {
+    return (
+      <div className="fixed inset-0 z-[200] bg-black flex flex-col animate-fade-in-up">
+        {/* Header Camera */}
+        <div className="absolute top-0 left-0 right-0 p-4 flex justify-between items-center z-10 bg-gradient-to-b from-black/80 to-transparent">
+          <span className="text-white font-bold tracking-wide text-sm drop-shadow-md px-2">Ambil Foto Dokumentasi</span>
+          <button type="button" onClick={stopCamera} className="p-2 text-white bg-white/20 hover:bg-white/30 rounded-full backdrop-blur transition-all">
+            <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M6 18L18 6M6 6l12 12" /></svg>
+          </button>
+        </div>
+        
+        {/* Live Video Feed */}
+        <video ref={videoRef} autoPlay playsInline className="flex-1 w-full h-full object-cover"></video>
+        
+        {/* Hidden Canvas untuk merender gambar */}
+        <canvas ref={canvasRef} className="hidden"></canvas>
+        
+        {/* Bottom Controls Camera */}
+        <div className="absolute bottom-0 left-0 right-0 p-8 flex justify-center items-center z-10 bg-gradient-to-t from-black/80 via-black/50 to-transparent">
+          <button type="button" onClick={capturePhoto} className="w-20 h-20 bg-white/20 backdrop-blur-sm border-[4px] border-white rounded-full flex items-center justify-center hover:scale-105 active:scale-95 transition-all group shadow-[0_0_20px_rgba(255,255,255,0.3)]">
+            <div className="w-14 h-14 bg-white rounded-full group-hover:scale-95 transition-all"></div>
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  // 2. View Laporan Print Out (Tampil Jika Tombol Ekspor Ditekan)
   if (isPrintMode) {
     const completedPrograms = filterByStatus(['completed']);
     const pendingPrograms = programs.filter(p => p.status !== 'completed' && (selectedFilterDivisi === 'Semua' || p.proposer === selectedFilterDivisi));
@@ -851,7 +879,7 @@ export default function App() {
     );
   }
 
-  // 2. View Halaman Login
+  // 3. View Halaman Login
   if (!isAuthenticated) {
     const defaultTheme = ROLE_THEMES['default'];
     return (
@@ -1147,7 +1175,7 @@ export default function App() {
             
             {/* BUTTON HAMBURGER DESKTOP & MOBILE */}
             <button 
-              className="hidden lg:flex text-slate-600 p-2.5 bg-slate-100/50 hover:bg-slate-200/70 rounded-[14px] transition-all active:scale-95 shadow-inner border border-slate-200/50"
+              className="hidden lg:flex text-slate-600 p-2.5 bg-slate-100/50 hover:bg-slate-200/70 rounded-[14px] transition-all active:scale-95 shadow-[inset_1px_1px_2px_rgba(255,255,255,0.8),inset_-1px_-1px_2px_rgba(148,163,184,0.1)] border border-slate-200/50"
               onClick={() => setIsSidebarCollapsed(!isSidebarCollapsed)}
               title={isSidebarCollapsed ? "Tampilkan Menu" : "Sembunyikan Menu"}
             >
@@ -1475,7 +1503,7 @@ export default function App() {
                                 <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M5 13l4 4L19 7" /></svg>
                                 Setujui (ACC)
                               </button>
-                              <button onClick={() => handleDeleteProgram(prog.id)} className="w-full text-[11px] font-bold text-red-500 py-3 border border-red-200 bg-red-50 rounded-[16px] hover:bg-red-100 transition-all shadow-sm">
+                              <button onClick={() => handleDeleteProgram(prog.id)} className="w-full text-[11px] font-bold text-red-500 py-3 border border-red-200 bg-red-50 rounded-[16px] hover:bg-red-100 transition-all shadow-sm mt-1">
                                 Hapus Permintaan
                               </button>
                             </div>
@@ -1537,23 +1565,6 @@ export default function App() {
                         <div>
                           <label className="block text-[13px] font-bold text-slate-600 mb-2">Dokumentasi Foto (Maks. 300KB)</label>
                           
-                          {/* JENDELA BIDIK KAMERA LANGSUNG */}
-                          {isCameraActive && (
-                            <div className="relative rounded-[24px] overflow-hidden border border-slate-300 bg-black aspect-video mb-4 shadow-inner">
-                              <video ref={videoRef} autoPlay playsInline className="w-full h-full object-cover"></video>
-                              <div className="absolute bottom-4 left-0 right-0 flex justify-center gap-3 px-4">
-                                <button type="button" onClick={capturePhoto} className="px-4 py-2 bg-emerald-600 text-white font-bold text-xs rounded-xl shadow-md flex items-center gap-1 active:scale-95 transition-all">
-                                  <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M3 9a2 2 0 012-2h.93a2 2 0 001.664-.89l.812-1.22A2 2 0 0110.07 4h3.86a2 2 0 011.664.89l.812 1.22A2 2 0 0018.07 7H19a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V9z" /><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M15 13a3 3 0 11-6 0 3 3 0 016 0z" /></svg>
-                                  Tangkap Foto
-                                </button>
-                                <button type="button" onClick={stopCamera} className="px-4 py-2 bg-rose-600 text-white font-bold text-xs rounded-xl shadow-md active:scale-95 transition-all">Batal</button>
-                              </div>
-                            </div>
-                          )}
-
-                          {/* CANVAS TERSEMBUNYI */}
-                          <canvas ref={canvasRef} className="hidden"></canvas>
-
                           {reportPhoto ? (
                             <div className="w-full rounded-[24px] overflow-hidden shadow-[inset_3px_3px_6px_rgba(148,163,184,0.15)] relative bg-slate-100 h-44 border border-slate-200 p-2">
                                <img src={reportPhoto} alt="preview" className="w-full h-full object-cover rounded-[16px]" />
@@ -1563,23 +1574,20 @@ export default function App() {
                                </button>
                             </div>
                           ) : (
-                            !isCameraActive && (
-                              <div className="w-full flex flex-col items-center justify-center border-2 border-dashed border-slate-300 rounded-[24px] bg-white/50 p-5 min-h-[180px] animate-scale-in">
-                                <p className="text-[12px] font-bold text-slate-500 mb-4 text-center">Pilih metode dokumentasi (Maks. 300KB)</p>
-                                <div className="flex flex-col sm:flex-row w-full gap-3 h-full">
-                                  <label className="flex-1 flex flex-col items-center justify-center p-4 bg-white border border-slate-200 rounded-[16px] cursor-pointer hover:bg-slate-50 transition-all shadow-sm animate-fade-in-up">
-                                    <svg className="w-6 h-6 mb-2 text-indigo-500" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" /></svg>
-                                    <span className="text-[11px] font-bold text-slate-600 text-center">Pilih dari Galeri</span>
-                                    <input type="file" accept="image/*" onChange={handlePhotoUpload} className="hidden" />
-                                  </label>
-                                  <label className="flex-1 flex flex-col items-center justify-center p-4 bg-indigo-50 border border-indigo-200 rounded-[16px] cursor-pointer hover:bg-indigo-100 transition-all shadow-sm animate-fade-in-up">
-                                    <svg className="w-6 h-6 mb-2 text-indigo-600" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 9a2 2 0 012-2h.93a2 2 0 001.664-.89l.812-1.22A2 2 0 0110.07 4h3.86a2 2 0 011.664.89l.812 1.22A2 2 0 0018.07 7H19a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V9z" /><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 13a3 3 0 11-6 0 3 3 0 016 0z" /></svg>
-                                    <span className="text-[11px] font-bold text-indigo-700 text-center">Buka Kamera</span>
-                                    <button type="button" onClick={startCamera} className="hidden"></button>
-                                  </label>
-                                </div>
+                            <div className="w-full flex flex-col items-center justify-center border-2 border-dashed border-slate-300 rounded-[24px] bg-white/50 p-5 min-h-[180px] animate-scale-in">
+                              <p className="text-[12px] font-bold text-slate-500 mb-4 text-center">Pilih metode dokumentasi (Maks. 300KB)</p>
+                              <div className="flex flex-col sm:flex-row w-full gap-3 h-full">
+                                <label className="flex-1 flex flex-col items-center justify-center p-4 bg-white border border-slate-200 rounded-[16px] cursor-pointer hover:bg-slate-50 transition-all shadow-sm animate-fade-in-up">
+                                  <svg className="w-6 h-6 mb-2 text-indigo-500" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" /></svg>
+                                  <span className="text-[11px] font-bold text-slate-600 text-center">Pilih dari Galeri</span>
+                                  <input type="file" accept="image/*" onChange={handlePhotoUpload} className="hidden" />
+                                </label>
+                                <button type="button" onClick={startCamera} className="flex-1 flex flex-col items-center justify-center p-4 bg-indigo-50 border border-indigo-200 rounded-[16px] cursor-pointer hover:bg-indigo-100 transition-all shadow-sm animate-fade-in-up">
+                                  <svg className="w-6 h-6 mb-2 text-indigo-600" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 9a2 2 0 012-2h.93a2 2 0 001.664-.89l.812-1.22A2 2 0 0110.07 4h3.86a2 2 0 011.664.89l.812 1.22A2 2 0 0018.07 7H19a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V9z" /><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 13a3 3 0 11-6 0 3 3 0 016 0z" /></svg>
+                                  <span className="text-[11px] font-bold text-indigo-700 text-center">Buka Kamera</span>
+                                </button>
                               </div>
-                            )
+                            </div>
                           )}
                         </div>
                         <button type="submit" className={`w-full mt-6 ${clay.btnPrimary}`}>
@@ -1647,7 +1655,7 @@ export default function App() {
                   </div>
                 ) : (
                   /* Daftar List Program Berjalan - TAMPIL HANYA JIKA TIDAK SEDANG MELAPOR */
-                  <div className={`${clay.card} overflow-hidden animate-fade-in-up`}>
+                  <div className={`${clay.card} overflow-hidden`}>
                     <div className="px-6 md:px-8 py-6 flex justify-between items-center bg-white/40 border-b border-slate-100">
                       <div>
                         <h3 className="text-[16px] md:text-[18px] font-bold text-slate-800">Program Berjalan</h3>
@@ -1676,7 +1684,7 @@ export default function App() {
                                </div>
                                <h4 className="font-extrabold text-slate-800 text-[15px] md:text-[16px]">{prog.title}</h4>
                             </div>
-                            <div className="shrink-0 w-full lg:w-auto">
+                            <div className="shrink-0 w-full lg:w-auto flex flex-col gap-2">
                                {prog.status === 'approved_pelaksanaan' && currentRole === prog.proposer && (
                                   <button onClick={() => { setReportingProgramId(prog.id); setReportDate(prog.proposedDate); }} className={`${clay.btnPrimary} w-full lg:w-auto`}>
                                     Buat Laporan Selesai
@@ -1685,6 +1693,11 @@ export default function App() {
                                {prog.status === 'reported' && (
                                   <button onClick={() => setViewingReportId(prog.id)} className={`${clay.btnSecondary} w-full lg:w-auto`}>
                                     Buka Detail
+                                  </button>
+                               )}
+                               {(currentRole === 'Kepala Sekolah' || currentRole === prog.proposer) && (
+                                  <button onClick={() => handleDeleteProgram(prog.id)} className="w-full lg:w-auto text-[11px] font-bold text-red-500 py-3 px-4 border border-red-200 bg-red-50 rounded-[16px] hover:bg-red-100 transition-all shadow-sm">
+                                    Hapus Program
                                   </button>
                                )}
                             </div>
@@ -1734,6 +1747,14 @@ export default function App() {
                              </div>
                              <h4 className="font-extrabold text-slate-800 text-[15px] md:text-[16px] mb-2">{prog.title}</h4>
                              <p className="text-[12px] md:text-[13px] font-medium text-slate-400 line-clamp-2 leading-relaxed">{prog.report?.description}</p>
+                             
+                             {(currentRole === 'Kepala Sekolah' || currentRole === prog.proposer) && (
+                               <div className="mt-4 pt-4 border-t border-slate-200/50 flex justify-end">
+                                 <button onClick={() => handleDeleteProgram(prog.id)} className="text-[11px] font-bold text-red-500 py-2 px-4 border border-red-200 bg-red-50 rounded-[12px] hover:bg-red-100 transition-all shadow-sm">
+                                   Hapus Arsip
+                                 </button>
+                               </div>
+                             )}
                           </div>
                         </div>
                       ))}
