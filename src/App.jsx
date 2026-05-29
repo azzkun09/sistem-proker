@@ -3,7 +3,7 @@ import React, { useState, useEffect, useRef } from 'react';
 // --- FIREBASE IMPORTS ---
 import { initializeApp } from 'firebase/app';
 import { getAuth, signInAnonymously, onAuthStateChanged, signInWithCustomToken } from 'firebase/auth';
-import { getFirestore, collection, doc, setDoc, onSnapshot } from 'firebase/firestore';
+import { getFirestore, collection, doc, setDoc, deleteDoc, onSnapshot } from 'firebase/firestore';
 
 // --- FIREBASE CONFIGURATION ---
 const providedConfig = {
@@ -159,7 +159,10 @@ export default function App() {
   const [reportPhoto, setReportPhoto] = useState('');
   const [viewingReportId, setViewingReportId] = useState(null);
   const [activeTab, setActiveTab] = useState('dashboard');
+  
+  // POPUP NOTIFICATIONS & MODAL CONFIRMATION
   const [notification, setNotification] = useState(null);
+  const [confirmDialog, setConfirmDialog] = useState({ isOpen: false, title: '', message: '', onConfirm: null });
 
   // Mode Print (PDF Export)
   const [isPrintMode, setIsPrintMode] = useState(false);
@@ -190,9 +193,14 @@ export default function App() {
   const theme = ROLE_THEMES[currentRole] || ROLE_THEMES['default'];
   const clay = getClayStyles(theme);
 
+  // --- POPUP HANDLERS ---
   const showNotification = (message, type = 'success') => {
     setNotification({ message, type });
     setTimeout(() => setNotification(null), 4000);
+  };
+
+  const requestConfirm = (title, message, onConfirm) => {
+    setConfirmDialog({ isOpen: true, title, message, onConfirm });
   };
 
   const ClayBadge = ({ children, color, className = "" }) => {
@@ -237,6 +245,7 @@ export default function App() {
     const programsRef = collection(db, 'artifacts', appId, 'public', 'data', 'programs');
     const usersRef = collection(db, 'artifacts', appId, 'public', 'data', 'users');
     const settingsRef = doc(db, 'artifacts', appId, 'public', 'data', 'settings', 'school_info');
+    const sessionRef = doc(db, 'artifacts', appId, 'users', firebaseUser.uid, 'session', 'current');
 
     const unsubscribePrograms = onSnapshot(programsRef, (snapshot) => {
       if (snapshot.empty) {
@@ -270,10 +279,26 @@ export default function App() {
       }
     });
 
+    // SISTEM PERSISTENSI SESI: Otomatis memulihkan state login walau di-refresh
+    const unsubscribeSession = onSnapshot(sessionRef, (docSnap) => {
+      if (docSnap.exists()) {
+        const data = docSnap.data();
+        if (data.isAuthenticated) {
+          setIsAuthenticated(true);
+          setCurrentRole(data.role);
+          setLoginUsername(data.username);
+        } else {
+          setIsAuthenticated(false);
+          setCurrentRole('');
+        }
+      }
+    });
+
     return () => {
       unsubscribePrograms();
       unsubscribeUsers();
       unsubscribeSettings();
+      unsubscribeSession();
     };
   }, [firebaseUser]);
 
@@ -316,7 +341,7 @@ export default function App() {
 
       setReportPhoto(base64);
       stopCamera();
-      showNotification("Foto berhasil ditangkap!");
+      showNotification("Foto berhasil ditangkap secara langsung!");
     }
   };
 
@@ -347,11 +372,21 @@ export default function App() {
     }
 
     if (targetUser && loginPassword === targetUser.password) {
+      
+      // Simpan Sesi Login ke Cloud (Bypass Refresh Data)
+      if (firebaseUser) {
+        setDoc(doc(db, 'artifacts', appId, 'users', firebaseUser.uid, 'session', 'current'), {
+          isAuthenticated: true,
+          role: targetUser.role,
+          username: targetUser.username
+        }).catch(err => console.error(err));
+      }
+
       setCurrentRole(targetUser.role);
       setIsAuthenticated(true);
       setLoginError('');
       setActiveTab('dashboard');
-      showNotification(`Selamat datang, ${targetUser.name}!`);
+      showNotification(`Selamat datang kembali, ${targetUser.name}!`);
       setLoginUsername(''); setLoginPassword('');
     } else {
       setLoginError('Username atau kata sandi salah.');
@@ -375,10 +410,16 @@ export default function App() {
   };
 
   const handleLogout = () => {
+    if (firebaseUser) {
+      setDoc(doc(db, 'artifacts', appId, 'users', firebaseUser.uid, 'session', 'current'), {
+        isAuthenticated: false, role: '', username: ''
+      }).catch(err => console.error(err));
+    }
     setIsAuthenticated(false);
     setCurrentRole('');
     setIsSidebarCollapsed(false);
     setSelectedFilterDivisi('Semua');
+    showNotification("Anda telah keluar dari sesi.");
   };
 
   const getProgramRef = (id) => doc(db, 'artifacts', appId, 'public', 'data', 'programs', id);
@@ -404,7 +445,7 @@ export default function App() {
     
     setDoc(getProgramRef(newProgramId), newProgram)
       .then(() => {
-        showNotification('Pengajuan berhasil dikirim.');
+        showNotification('Pengajuan berhasil ditambahkan ke database.');
         setNewTitle(''); setNewDate(''); setNewDescription(''); setNewBudget(''); setNewProgramType('Bulanan'); setNewWeeklySchedule('Seminggu Sekali');
         setActiveTab('antrean_pengajuan');
       })
@@ -415,9 +456,17 @@ export default function App() {
     const progToApprove = programs.find(p => p.id === id);
     if (progToApprove) {
       setDoc(getProgramRef(id), { ...progToApprove, approvals: { kepsek: true }, status: 'approved_pelaksanaan' })
-        .then(() => showNotification('Proposal disetujui.'))
+        .then(() => showNotification('Proposal berhasil disetujui.'))
         .catch(err => showNotification('Gagal menyetujui proposal.', 'error'));
     }
+  };
+
+  const handleDeleteProgram = (id) => {
+    requestConfirm("Hapus Pengajuan?", "Pengajuan program ini akan dihapus secara permanen.", () => {
+      deleteDoc(getProgramRef(id))
+        .then(() => showNotification('Data program berhasil dihapus secara permanen.'))
+        .catch(err => showNotification('Gagal menghapus program.', 'error'));
+    });
   };
 
   const handlePhotoUpload = (e) => {
@@ -431,6 +480,7 @@ export default function App() {
       const reader = new FileReader();
       reader.onloadend = () => {
         setReportPhoto(reader.result);
+        showNotification("Foto berhasil diunggah.");
       };
       reader.readAsDataURL(file);
     }
@@ -479,7 +529,7 @@ export default function App() {
       
       setDoc(getUserRef(newUserId), newUser)
         .then(() => {
-          showNotification(`Akun baru ${manageName} berhasil dibuat.`);
+          showNotification(`Akun baru ${manageName} berhasil ditambahkan.`);
           setManageName(''); setManageUsername(''); setManagePassword(''); setManageRole('Kaprog TKJ');
         })
         .catch(err => showNotification('Gagal membuat akun.', 'error'));
@@ -502,6 +552,14 @@ export default function App() {
         .then(() => showNotification(`Status akun ${userToToggle.name} diubah menjadi ${nextStatus}.`))
         .catch(err => showNotification('Gagal mengubah status akun.', 'error'));
     }
+  };
+
+  const handleDeleteUser = (id) => {
+    requestConfirm("Hapus Akun?", "Akun ini akan dihapus secara permanen dan tidak dapat mengakses sistem lagi.", () => {
+      deleteDoc(getUserRef(id))
+        .then(() => showNotification('Akun berhasil dihapus dari sistem.'))
+        .catch(err => showNotification('Gagal menghapus akun.', 'error'));
+    });
   };
 
   const handleLogoUpload = (e) => {
@@ -528,7 +586,7 @@ export default function App() {
     setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'settings', 'school_info'), {
       schoolName, headmasterName, headmasterNIP
     }, { merge: true })
-    .then(() => showNotification('Identitas sekolah berhasil diperbarui.'))
+    .then(() => showNotification('Data identitas sekolah berhasil disimpan.'))
     .catch(err => showNotification('Gagal memperbarui identitas.', 'error'));
   };
 
@@ -550,7 +608,7 @@ export default function App() {
         }
       })
       .then(() => {
-        showNotification('Laporan terkirim.');
+        showNotification('Laporan kegiatan berhasil terkirim.');
         setReportingProgramId(null); setReportDesc(''); setReportDate(''); setReportPhoto('');
       })
       .catch(err => showNotification('Gagal mengirim laporan.', 'error'));
@@ -566,7 +624,7 @@ export default function App() {
         report: { ...progToApprove.report, approvedByKepsek: true } 
       })
       .then(() => {
-        showNotification('Laporan diverifikasi.');
+        showNotification('Laporan berhasil diverifikasi dan diselesaikan.');
         setViewingReportId(null);
       })
       .catch(err => showNotification('Gagal memverifikasi laporan.', 'error'));
@@ -623,7 +681,7 @@ export default function App() {
       });
       
       if (importCount > 0) {
-        showNotification(`${importCount} program diimpor ke database.`);
+        showNotification(`${importCount} program berhasil diimpor.`);
         setActiveTab('antrean_pengajuan');
       }
     };
@@ -810,8 +868,9 @@ export default function App() {
           .animate-float { animation: float 3s ease-in-out infinite; }
         `}</style>
 
+        {/* Notifikasi Global Login */}
         {notification && (
-          <div className="absolute top-4 right-4 z-50 animate-fade-in-up">
+          <div className="fixed top-4 right-4 z-[150] animate-fade-in-up">
             <div className={`${clay.cardSmall} !bg-white/95 !backdrop-blur-xl px-5 py-4 flex items-center gap-4`}>
               <div className={`p-2 rounded-xl border ${notification.type === 'error' ? 'bg-red-50 text-red-500 border-red-200/50' : 'bg-emerald-50 text-emerald-500 border-emerald-200/50'}`}>
                 {notification.type === 'error' ? (
@@ -825,6 +884,7 @@ export default function App() {
           </div>
         )}
 
+        {/* BUBBLE ROLE SELECTOR MODAL */}
         {isRoleModalOpen && (
           <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/25 backdrop-blur-md">
             <div className={`${clay.card} p-8 max-w-3xl w-full text-center relative overflow-hidden animate-scale-in`}>
@@ -833,7 +893,7 @@ export default function App() {
               </button>
               
               <h3 className="text-xl font-extrabold text-slate-800 tracking-tight mb-2">Pilih Peran Workspace</h3>
-              <p className="text-sm font-medium text-slate-500 mb-8">Pilih peran di bawah untuk mengisi username secara otomatis. Anda tetap memerlukan kata sandi unik.</p>
+              <p className="text-sm font-medium text-slate-500 mb-8">Pilih peran di bawah untuk mengisi username secara otomatis.</p>
               
               <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 sm:gap-6 justify-center items-center">
                 {[
@@ -946,6 +1006,39 @@ export default function App() {
         .scrollbar-hide { -ms-overflow-style: none; scrollbar-width: none; }
       `}</style>
 
+      {/* MODAL KONFIRMASI TINDAKAN DESTRUKTIF */}
+      {confirmDialog.isOpen && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-slate-900/40 backdrop-blur-sm animate-fade-in-up">
+           <div className={`${clay.card} p-8 max-w-sm w-full text-center`}>
+              <div className="w-16 h-16 bg-red-100 text-red-500 rounded-full flex items-center justify-center mx-auto mb-4 border-2 border-white shadow-md">
+                <svg className="w-8 h-8" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" /></svg>
+              </div>
+              <h3 className="text-lg font-extrabold text-slate-800 mb-2 tracking-tight">{confirmDialog.title}</h3>
+              <p className="text-sm font-medium text-slate-500 mb-6">{confirmDialog.message}</p>
+              <div className="flex gap-3 justify-center">
+                <button onClick={() => setConfirmDialog({ ...confirmDialog, isOpen: false })} className={`${clay.btnSecondary} flex-1`}>Batal</button>
+                <button onClick={() => { confirmDialog.onConfirm(); setConfirmDialog({ ...confirmDialog, isOpen: false }); }} className={`${clay.btnDanger} flex-1`}>Ya, Lanjutkan</button>
+              </div>
+           </div>
+        </div>
+      )}
+
+      {/* Global Notification Toast */}
+      {notification && (
+        <div className="fixed top-4 right-4 z-[150] animate-fade-in-up">
+          <div className={`${clay.cardSmall} !bg-white/95 !backdrop-blur-xl px-5 py-4 flex items-center gap-4`}>
+            <div className={`p-2 rounded-xl border ${notification.type === 'error' ? 'bg-red-50 text-red-500 border-red-200/50' : 'bg-emerald-50 text-emerald-500 border-emerald-200/50'}`}>
+              {notification.type === 'error' ? (
+                <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
+              ) : (
+                <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M5 13l4 4L19 7" /></svg>
+              )}
+            </div>
+            <p className="text-[14px] font-bold text-slate-800">{notification.message}</p>
+          </div>
+        </div>
+      )}
+
       {/* MOBILE OVERLAY */}
       {isMobileMenuOpen && (
         <div className="fixed inset-0 bg-slate-900/10 backdrop-blur-sm z-30 lg:hidden transition-opacity duration-300" onClick={() => setIsMobileMenuOpen(false)}></div>
@@ -963,7 +1056,7 @@ export default function App() {
           {/* Logo & Profil */}
           <div className="p-6 border-b border-slate-200/50">
             <div className="flex items-center gap-3 mb-6">
-              <div className={`w-10 h-10 rounded-2xl bg-gradient-to-br ${theme.primary} flex items-center justify-center shadow-md shrink-0 overflow-hidden`}>
+              <div className={`w-10 h-10 rounded-2xl bg-gradient-to-br ${theme.primary} flex items-center justify-center shadow-[4px_4px_10px_rgba(0,0,0,0.15),inset_-2px_-2px_4px_rgba(0,0,0,0.15),inset_2px_2px_4px_rgba(255,255,255,0.3)] shrink-0 overflow-hidden`}>
                 {schoolLogo ? (
                   <img src={schoolLogo} alt="Logo" className="w-full h-full object-cover" />
                 ) : (
@@ -1196,7 +1289,7 @@ export default function App() {
                             <div key={prog.id} className="bg-white/80 border border-slate-150 rounded-[20px] p-4 flex justify-between items-center shadow-[4px_6px_12px_rgba(148,163,184,0.06)]">
                               <div>
                                 <p className="font-bold text-[13px] text-slate-800">{prog.title}</p>
-                                <p className="text-[11px] font-semibold text-slate-500 mt-1">{prog.proposer}</p>
+                                <p className="text-[11px] font-semibold text-slate-400 mt-1">{prog.proposer}</p>
                               </div>
                               <span className="text-[11px] font-bold text-slate-500 ml-3 whitespace-nowrap bg-slate-100 px-3 py-1.5 rounded-xl border border-slate-200/50">
                                 {prog.status === 'pending_approval' ? 'Butuh ACC' : 'Belum Lapor'}
@@ -1377,13 +1470,25 @@ export default function App() {
                         
                         <div className="md:w-56 shrink-0 flex flex-col justify-center gap-4 border-t md:border-t-0 md:border-l border-slate-200/50 pt-6 md:pt-0 md:pl-8">
                           {currentRole === 'Kepala Sekolah' ? (
-                            <button onClick={() => handleApproveProposal(prog.id)} className={clay.btnSuccess}>
-                              <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M5 13l4 4L19 7" /></svg>
-                              Setujui (ACC)
-                            </button>
+                            <div className="flex flex-col gap-2 w-full">
+                              <button onClick={() => handleApproveProposal(prog.id)} className={clay.btnSuccess}>
+                                <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M5 13l4 4L19 7" /></svg>
+                                Setujui (ACC)
+                              </button>
+                              <button onClick={() => handleDeleteProgram(prog.id)} className="w-full text-[11px] font-bold text-red-500 py-3 border border-red-200 bg-red-50 rounded-[16px] hover:bg-red-100 transition-all shadow-sm">
+                                Hapus Permintaan
+                              </button>
+                            </div>
                           ) : (
-                            <div className="text-center bg-slate-100/60 border border-slate-200/50 rounded-[16px] p-4 shadow-inner">
-                              <p className="text-[12px] font-extrabold text-slate-500">Menunggu ACC Kepala Sekolah</p>
+                            <div className="flex flex-col gap-2 w-full">
+                              <div className="text-center bg-slate-100/60 border border-slate-200/50 rounded-[16px] p-4 shadow-inner">
+                                <p className="text-[12px] font-extrabold text-slate-500">Menunggu ACC Kepala Sekolah</p>
+                              </div>
+                              {currentRole === prog.proposer && (
+                                <button onClick={() => handleDeleteProgram(prog.id)} className="w-full text-[11px] font-bold text-red-500 py-3 border border-red-200 bg-red-50 rounded-[16px] hover:bg-red-100 transition-all shadow-sm mt-1">
+                                  Batalkan / Hapus
+                                </button>
+                              )}
                             </div>
                           )}
                         </div>
@@ -1807,7 +1912,7 @@ export default function App() {
                           </div>
                         </div>
                         
-                        <div className="flex items-center gap-2 w-full sm:w-auto justify-end">
+                        <div className="flex flex-wrap items-center gap-2 w-full sm:w-auto justify-end mt-3 sm:mt-0">
                           {user.role !== 'Kepala Sekolah' ? (
                             <>
                               <button 
@@ -1825,6 +1930,12 @@ export default function App() {
                                 }`}
                               >
                                 {user.status === 'Aktif' ? 'Nonaktifkan' : 'Aktifkan'}
+                              </button>
+                              <button 
+                                onClick={() => handleDeleteUser(user.id)} 
+                                className="px-3 py-1.5 text-xs font-bold rounded-xl transition-all shadow-sm active:scale-95 bg-slate-100 border border-slate-200 text-slate-600 hover:bg-slate-200"
+                              >
+                                Hapus
                               </button>
                             </>
                           ) : (
