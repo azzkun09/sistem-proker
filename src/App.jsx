@@ -181,8 +181,11 @@ export default function App() {
   const [managePassword, setManagePassword] = useState('');
   const [editingUserId, setEditingUserId] = useState(null);
 
-  // State Khusus Untuk Pengaturan Logo Sekolah
+  // State Khusus Untuk Pengaturan Identitas Sekolah
   const [schoolLogo, setSchoolLogo] = useState(null);
+  const [schoolName, setSchoolName] = useState('SMK Bina Siswa Mandiri Limbangan');
+  const [headmasterName, setHeadmasterName] = useState('Dr. Ahmad Fauzi, M.Pd.');
+  const [headmasterNIP, setHeadmasterNIP] = useState('19800101 200501 1 001');
 
   const theme = ROLE_THEMES[currentRole] || ROLE_THEMES['default'];
   const clay = getClayStyles(theme);
@@ -258,8 +261,12 @@ export default function App() {
     });
 
     const unsubscribeSettings = onSnapshot(settingsRef, (docSnap) => {
-      if (docSnap.exists() && docSnap.data().logoUrl) {
-        setSchoolLogo(docSnap.data().logoUrl);
+      if (docSnap.exists()) {
+        const data = docSnap.data();
+        if (data.logoUrl) setSchoolLogo(data.logoUrl);
+        if (data.schoolName) setSchoolName(data.schoolName);
+        if (data.headmasterName) setHeadmasterName(data.headmasterName);
+        if (data.headmasterNIP) setHeadmasterNIP(data.headmasterNIP);
       }
     });
 
@@ -381,7 +388,6 @@ export default function App() {
   const handleCreateProgram = (e) => {
     e.preventDefault();
     
-    // Menyesuaikan nilai tanggal pelaksanaan berdasarkan tipe program
     let finalDate = newDate;
     if (newProgramType === 'Harian') finalDate = 'Setiap Hari';
     if (newProgramType === 'Mingguan') finalDate = newWeeklySchedule;
@@ -517,6 +523,15 @@ export default function App() {
     }
   };
 
+  const handleSaveSchoolInfo = (e) => {
+    e.preventDefault();
+    setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'settings', 'school_info'), {
+      schoolName, headmasterName, headmasterNIP
+    }, { merge: true })
+    .then(() => showNotification('Identitas sekolah berhasil diperbarui.'))
+    .catch(err => showNotification('Gagal memperbarui identitas.', 'error'));
+  };
+
   const handleSubmitReport = (e) => {
     e.preventDefault();
     if (!reportDesc || !reportDate) {
@@ -637,11 +652,10 @@ export default function App() {
   // 1. View Laporan Print Out (Tampil Jika Tombol Ekspor Ditekan)
   if (isPrintMode) {
     const completedPrograms = filterByStatus(['completed']);
-    const pendingPrograms = programs.filter(p => p.status !== 'completed'); // Semua yang belum selesai
+    const pendingPrograms = programs.filter(p => p.status !== 'completed' && (selectedFilterDivisi === 'Semua' || p.proposer === selectedFilterDivisi));
 
     return (
       <div className="bg-slate-200 min-h-screen pb-10 w-full overflow-y-auto print:bg-white print:p-0">
-        {/* Print Styles */}
         <style>{`
           @media print {
             .no-print { display: none !important; }
@@ -651,37 +665,50 @@ export default function App() {
           }
         `}</style>
         
-        {/* Controls Bar (Sembunyi saat cetak sungguhan) */}
-        <div className="no-print max-w-[210mm] mx-auto bg-white p-4 rounded-xl shadow-md my-6 flex justify-between items-center sticky top-4 z-50 border border-slate-300">
-          <p className="text-sm font-bold text-slate-700">Pratinjau Cetak Laporan (A4)</p>
-          <div className="flex gap-3">
+        <div className="no-print max-w-[210mm] mx-auto bg-white p-4 rounded-xl shadow-md my-6 flex flex-col sm:flex-row justify-between items-center gap-4 sticky top-4 z-50 border border-slate-300">
+          <div className="flex items-center gap-4 w-full sm:w-auto">
+             <p className="text-sm font-bold text-slate-700 hidden sm:block">Pratinjau Laporan</p>
+             <select
+                value={selectedFilterDivisi}
+                onChange={(e) => setSelectedFilterDivisi(e.target.value)}
+                className="bg-slate-100 border border-slate-300 text-indigo-700 text-[13px] font-bold rounded-lg px-3 py-2 outline-none w-full sm:w-auto cursor-pointer"
+              >
+                <option value="Semua">Semua Divisi</option>
+                <option value="Kesiswaan">Kesiswaan</option>
+                <option value="Kurikulum">Kurikulum</option>
+                <option value="Hubin">Hubin</option>
+                <option value="Kaprog TKJ">Kaprog TKJ</option>
+                <option value="Kaprog TKR">Kaprog TKR</option>
+                <option value="Kaprog MP">Kaprog MP</option>
+              </select>
+          </div>
+          <div className="flex gap-3 w-full sm:w-auto justify-end">
             <button onClick={() => setIsPrintMode(false)} className="px-4 py-2 bg-slate-100 text-slate-700 font-bold rounded-lg text-sm hover:bg-slate-200 transition-all">Kembali</button>
             <button onClick={() => window.print()} className="px-5 py-2 bg-indigo-600 text-white font-bold rounded-lg text-sm shadow-md hover:bg-indigo-700 transition-all flex items-center gap-2">
               <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M17 17h2a2 2 0 002-2v-4a2 2 0 00-2-2H5a2 2 0 00-2 2v4a2 2 0 002 2h2m2 4h6a2 2 0 002-2v-4a2 2 0 00-2-2H9a2 2 0 00-2 2v4a2 2 0 002 2zm8-12V5a2 2 0 00-2-2H9a2 2 0 00-2 2v4h10z" /></svg>
-              Cetak / Simpan PDF
+              Download PDF
             </button>
           </div>
         </div>
 
-        {/* Kertas A4 */}
         <div className="max-w-[210mm] mx-auto bg-white text-black font-serif shadow-2xl print:shadow-none p-10 md:p-12 min-h-[297mm] border border-slate-300 print:border-none">
-          
-          {/* Kop Surat */}
           <div className="flex items-center justify-between border-b-4 border-double border-slate-900 pb-5 mb-8">
             <div className="w-24 h-24 shrink-0 overflow-hidden flex items-center justify-center">
                {schoolLogo ? <img src={schoolLogo} className="w-full h-full object-contain" alt="Logo" /> : <div className="w-20 h-20 bg-slate-200 rounded-full"></div>}
             </div>
             <div className="text-center flex-1 px-4">
-              <h1 className="text-2xl font-black uppercase tracking-widest text-slate-900">SMK Bina Siswa Mandiri Limbangan</h1>
+              <h1 className="text-2xl font-black uppercase tracking-widest text-slate-900">{schoolName}</h1>
               <p className="text-[13px] font-medium text-slate-700 mt-1 uppercase">Sistem Manajemen Program Kerja Digital (BSM SmartPro)</p>
               <p className="text-[11px] font-bold text-slate-500 mt-1 italic">#BeraniBeda #SantunTerampilUnggul</p>
             </div>
           </div>
           
-          <h2 className="text-center font-bold text-lg mb-8 underline underline-offset-4 uppercase">Laporan Evaluasi & Pelaksanaan Program Kerja</h2>
+          <h2 className="text-center font-bold text-lg mb-8 underline underline-offset-4 uppercase">
+            Laporan Evaluasi & Pelaksanaan Program Kerja <br/>
+            <span className="text-[14px] font-medium text-slate-600">({selectedFilterDivisi === 'Semua' ? 'Keseluruhan Divisi' : `Divisi: ${selectedFilterDivisi}`})</span>
+          </h2>
           
           <div className="space-y-10">
-            {/* BAGIAN A: PROGRAM TERLAKSANA */}
             <section>
               <h3 className="font-bold text-md mb-4 bg-slate-100 p-2.5 border-l-4 border-slate-800 uppercase tracking-wide">A. Rincian Program Terlaksana</h3>
               {completedPrograms.length === 0 ? (
@@ -705,7 +732,6 @@ export default function App() {
                          </div>
                        </div>
                        
-                       {/* Menampilkan Gambar ke dalam PDF */}
                        {prog.report?.photoUrl && (
                          <div className="sm:w-56 shrink-0 flex flex-col items-center justify-start mt-2 sm:mt-0">
                             <div className="border-4 border-slate-200 p-1 w-full bg-white shadow-sm">
@@ -720,7 +746,6 @@ export default function App() {
               )}
             </section>
             
-            {/* BAGIAN B: PROGRAM BERJALAN & ANTREAN */}
             <section className="print-break-inside-avoid">
               <h3 className="font-bold text-md mb-4 bg-slate-100 p-2.5 border-l-4 border-slate-800 uppercase tracking-wide">B. Daftar Program Belum Terlaksana / Berjalan</h3>
               {pendingPrograms.length === 0 ? (
@@ -754,14 +779,13 @@ export default function App() {
             </section>
           </div>
           
-          {/* Tanda Tangan */}
           <div className="mt-20 flex justify-end print-break-inside-avoid">
             <div className="text-center w-72">
-                <p className="text-[14px]">Limbangan, {new Date().toLocaleDateString('id-ID', { year: 'numeric', month: 'long', day: 'numeric' })}</p>
+                <p className="text-[14px]">Ditandatangani pada: {new Date().toLocaleDateString('id-ID', { year: 'numeric', month: 'long', day: 'numeric' })}</p>
                 <p className="font-bold mt-1 text-[14px]">Kepala Sekolah,</p>
-                <div className="h-24"></div> {/* Area kosong untuk tanda tangan basah */}
-                <p className="font-bold text-[15px] underline underline-offset-4">Dr. Ahmad Fauzi, M.Pd.</p>
-                <p className="text-[13px] mt-0.5">NIP. 19800101 200501 1 001</p>
+                <div className="h-24"></div> 
+                <p className="font-bold text-[15px] underline underline-offset-4">{headmasterName}</p>
+                <p className="text-[13px] mt-0.5">NIP. {headmasterNIP}</p>
             </div>
           </div>
         </div>
@@ -774,7 +798,6 @@ export default function App() {
     const defaultTheme = ROLE_THEMES['default'];
     return (
       <div className="min-h-screen bg-[#F6F8FC] flex items-center justify-center p-4 relative overflow-hidden font-sans selection:bg-indigo-200 selection:text-indigo-900 z-0 w-full">
-        {/* Background Aurora */}
         <div className={`absolute top-[-10%] left-[-5%] w-[45%] h-[45%] ${defaultTheme.mesh[0]} rounded-full blur-[110px] -z-10 mix-blend-multiply pointer-events-none`}></div>
         <div className={`absolute bottom-[-5%] right-[-5%] w-[40%] h-[40%] ${defaultTheme.mesh[1]} rounded-full blur-[100px] -z-10 mix-blend-multiply pointer-events-none`}></div>
         
@@ -802,7 +825,6 @@ export default function App() {
           </div>
         )}
 
-        {/* BUBBLE ROLE SELECTOR MODAL */}
         {isRoleModalOpen && (
           <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/25 backdrop-blur-md">
             <div className={`${clay.card} p-8 max-w-3xl w-full text-center relative overflow-hidden animate-scale-in`}>
@@ -838,7 +860,7 @@ export default function App() {
 
         <div className={`${clay.card} p-8 md:p-12 w-full max-w-md animate-fade-in-up`}>
           <div className="text-center mb-8">
-            <div className="w-16 h-16 mx-auto rounded-3xl bg-gradient-to-br from-indigo-500 to-purple-600 flex items-center justify-center shadow-[4px_6px_16px_rgba(99,102,241,0.3),inset_-3px_-3px_8px_rgba(0,0,0,0.15),inset_3px_3px_8px_rgba(255,255,255,0.3)] mb-5 overflow-hidden">
+            <div className="w-16 h-16 mx-auto rounded-3xl bg-gradient-to-br from-indigo-500 to-purple-600 flex items-center justify-center shadow-md mb-5 overflow-hidden">
               {schoolLogo ? (
                 <img src={schoolLogo} alt="Logo Sekolah" className="w-full h-full object-cover" />
               ) : (
@@ -884,7 +906,7 @@ export default function App() {
           </form>
 
           <div className="mt-8 pt-5 border-t border-slate-200/50 text-center">
-             <p className="text-[10px] text-slate-400 font-medium">&copy; {new Date().getFullYear()} SMK Bina Siswa Mandiri Limbangan. All rights reserved.</p>
+             <p className="text-[10px] text-slate-400 font-medium">&copy; {new Date().getFullYear()} {schoolName}. All rights reserved.</p>
           </div>
         </div>
       </div>
@@ -941,7 +963,7 @@ export default function App() {
           {/* Logo & Profil */}
           <div className="p-6 border-b border-slate-200/50">
             <div className="flex items-center gap-3 mb-6">
-              <div className={`w-10 h-10 rounded-2xl bg-gradient-to-br ${theme.primary} flex items-center justify-center shadow-[4px_4px_10px_rgba(0,0,0,0.15),inset_-2px_-2px_4px_rgba(0,0,0,0.15),inset_2px_2px_4px_rgba(255,255,255,0.3)] shrink-0 overflow-hidden`}>
+              <div className={`w-10 h-10 rounded-2xl bg-gradient-to-br ${theme.primary} flex items-center justify-center shadow-md shrink-0 overflow-hidden`}>
                 {schoolLogo ? (
                   <img src={schoolLogo} alt="Logo" className="w-full h-full object-cover" />
                 ) : (
@@ -980,7 +1002,10 @@ export default function App() {
               { id: 'antrean_pengajuan', label: 'Persetujuan', icon: 'M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z', count: filterByStatus(['pending_approval']).length },
               { id: 'pelaksanaan', label: 'Pelaksanaan', icon: 'M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4', count: filterByStatus(['approved_pelaksanaan', 'reported']).length },
               { id: 'selesai', label: 'Arsip Selesai', icon: 'M5 8h14M5 8a2 2 0 110-4h14a2 2 0 110 4M5 8v10a2 2 0 002 2h10a2 2 0 002-2V8m-9 4h4' },
-              ...(currentRole === 'Kepala Sekolah' ? [{ id: 'kelola_akun', label: 'Kelola Akun', icon: 'M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z' }] : [])
+              ...(currentRole === 'Kepala Sekolah' ? [
+                { id: 'pengaturan_sekolah', label: 'Identitas Sekolah', icon: 'M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z M15 12a3 3 0 11-6 0 3 3 0 016 0z' },
+                { id: 'kelola_akun', label: 'Kelola Akun', icon: 'M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z' }
+              ] : [])
             ].map(item => (
               <button
                 key={item.id}
@@ -1014,7 +1039,7 @@ export default function App() {
               Keluar Sesi
             </button>
             <div className="mt-4 text-center">
-              <p className="text-[9px] text-slate-400 font-medium">&copy; {new Date().getFullYear()} SMK Bina Siswa Mandiri Limbangan.</p>
+              <p className="text-[9px] text-slate-400 font-medium">&copy; {new Date().getFullYear()} {schoolName}.</p>
             </div>
           </div>
         </div>
@@ -1029,7 +1054,7 @@ export default function App() {
             
             {/* BUTTON HAMBURGER DESKTOP & MOBILE */}
             <button 
-              className="hidden lg:flex text-slate-600 p-2.5 bg-slate-100/50 hover:bg-slate-200/70 rounded-[14px] transition-all active:scale-95 shadow-[inset_1px_1px_2px_rgba(255,255,255,0.8),inset_-1px_-1px_2px_rgba(148,163,184,0.1)] border border-slate-200/50"
+              className="hidden lg:flex text-slate-600 p-2.5 bg-slate-100/50 hover:bg-slate-200/70 rounded-[14px] transition-all active:scale-95 shadow-inner border border-slate-200/50"
               onClick={() => setIsSidebarCollapsed(!isSidebarCollapsed)}
               title={isSidebarCollapsed ? "Tampilkan Menu" : "Sembunyikan Menu"}
             >
@@ -1049,6 +1074,7 @@ export default function App() {
               {activeTab === 'pelaksanaan' && 'Manajemen Pelaksanaan'}
               {activeTab === 'selesai' && 'Arsip Dokumen Selesai'}
               {activeTab === 'kelola_akun' && 'Manajemen Hak Akses Akun'}
+              {activeTab === 'pengaturan_sekolah' && 'Pengaturan Identitas Sistem'}
             </h2>
           </div>
           
@@ -1071,7 +1097,7 @@ export default function App() {
           <div className="max-w-[1100px] mx-auto space-y-6 transition-all duration-300">
 
             {/* FILTER DIVISI (KHUSUS KEPALA SEKOLAH/YAYASAN) */}
-            {isManagement && activeTab !== 'kelola_akun' && !reportingProgramId && (
+            {isManagement && activeTab !== 'kelola_akun' && activeTab !== 'pengaturan_sekolah' && !reportingProgramId && (
               <div className={`${clay.cardSmall} p-4 flex flex-col sm:flex-row sm:items-center gap-3 animate-fade-in-up border border-indigo-200/50`}>
                 <span className="text-[13px] font-bold text-slate-600 flex items-center gap-2 shrink-0 px-2">
                   <svg className="w-4 h-4 text-indigo-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}><path strokeLinecap="round" strokeLinejoin="round" d="M3 4a1 1 0 011-1h16a1 1 0 011 1v2.586a1 1 0 01-.293.707l-6.414 6.414a1 1 0 00-.293.707V17l-4 4v-6.586a1 1 0 00-.293-.707L3.293 7.293A1 1 0 013 6.586V4z" /></svg>
@@ -1118,7 +1144,7 @@ export default function App() {
                     { label: 'Terlaksana', value: completedCount, icon: 'M9 12l2 2 4-4M7.835 4.697a3.42 3.42 0 001.946-.806 3.42 3.42 0 014.438 0 3.42 3.42 0 001.946.806 3.42 3.42 0 013.138 3.138 3.42 3.42 0 00.806 1.946 3.42 3.42 0 010 4.438 3.42 3.42 0 00-.806 1.946 3.42 3.42 0 01-3.138 3.138 3.42 3.42 0 00-1.946.806 3.42 3.42 0 01-4.438 0 3.42 3.42 0 00-1.946-.806 3.42 3.42 0 01-3.138-3.138 3.42 3.42 0 00-.806-1.946 3.42 3.42 0 010-4.438 3.42 3.42 0 00.806-1.946 3.42 3.42 0 013.138-3.138z', color: 'text-emerald-600', bg: 'bg-emerald-50 border border-emerald-100' }
                   ].map((stat, i) => (
                     <div key={i} className={`${clay.cardSmall} p-6 flex flex-col items-center text-center justify-center animate-fade-in-up stagger-${i+1}`}>
-                      <div className={`p-4 rounded-[20px] shadow-[inset_1px_1px_2px_rgba(255,255,255,0.8),inset_-1px_-1px_2px_rgba(148,163,184,0.1)] ${stat.bg} ${stat.color} mb-4 transition-colors duration-1000`}>
+                      <div className={`p-4 rounded-[20px] shadow-sm ${stat.bg} ${stat.color} mb-4 transition-colors duration-1000`}>
                          <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}><path strokeLinecap="round" strokeLinejoin="round" d={stat.icon} /></svg>
                       </div>
                       <p className="text-4xl font-extrabold text-slate-800 tracking-tight drop-shadow-sm">{stat.value}</p>
@@ -1170,7 +1196,7 @@ export default function App() {
                             <div key={prog.id} className="bg-white/80 border border-slate-150 rounded-[20px] p-4 flex justify-between items-center shadow-[4px_6px_12px_rgba(148,163,184,0.06)]">
                               <div>
                                 <p className="font-bold text-[13px] text-slate-800">{prog.title}</p>
-                                <p className="text-[11px] font-semibold text-slate-400 mt-1">{prog.proposer}</p>
+                                <p className="text-[11px] font-semibold text-slate-500 mt-1">{prog.proposer}</p>
                               </div>
                               <span className="text-[11px] font-bold text-slate-500 ml-3 whitespace-nowrap bg-slate-100 px-3 py-1.5 rounded-xl border border-slate-200/50">
                                 {prog.status === 'pending_approval' ? 'Butuh ACC' : 'Belum Lapor'}
@@ -1320,7 +1346,7 @@ export default function App() {
                 <div className="p-4 md:p-6 space-y-6">
                   {filterByStatus(['pending_approval']).length === 0 ? (
                     <div className="py-12 flex flex-col items-center justify-center text-center">
-                      <div className="w-16 h-16 bg-slate-100 rounded-3xl shadow-[inset_2px_2px_4px_rgba(148,163,184,0.15),inset_-2px_-2px_4px_rgba(255,255,255,0.8)] border border-slate-200/40 flex items-center justify-center mb-6">
+                      <div className="w-16 h-16 bg-[#0F172A]/10 rounded-3xl shadow-[inset_4px_4px_8px_rgba(0,0,0,0.05),inset_-2px_-2px_4px_rgba(255,255,255,0.8)] flex items-center justify-center mb-6">
                         <svg className="w-7 h-7 text-slate-400" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" /></svg>
                       </div>
                       <p className="text-[16px] font-bold text-slate-800">Tidak ada antrean</p>
@@ -1612,115 +1638,146 @@ export default function App() {
               </div>
             )}
 
+            {/* --- PENGATURAN SEKOLAH (HANYA KEPALA SEKOLAH) --- */}
+            {activeTab === 'pengaturan_sekolah' && currentRole === 'Kepala Sekolah' && (
+              <div className="max-w-4xl mx-auto animate-fade-in-up space-y-6">
+                <div className={`${clay.card} p-6 md:p-10`}>
+                  <div className="mb-8 border-b border-slate-200/50 pb-6">
+                    <h3 className="text-[20px] font-extrabold text-slate-800 tracking-tight">Identitas Sekolah & Laporan</h3>
+                    <p className="text-[14px] font-medium text-slate-500 mt-1">Sesuaikan logo, nama sekolah, dan penanda tangan laporan PDF.</p>
+                  </div>
+
+                  <div className="flex flex-col md:flex-row gap-10">
+                    {/* Bagian Kiri: Logo */}
+                    <div className="flex flex-col items-center gap-4 md:w-1/3 shrink-0">
+                      <p className="text-[13px] font-bold text-slate-600 w-full text-center">Logo Sistem & Kop Surat</p>
+                      <div className="w-40 h-40 rounded-[32px] bg-slate-100 border-2 border-dashed border-slate-300 flex items-center justify-center overflow-hidden shadow-[inset_2px_2px_4px_rgba(148,163,184,0.2)] relative group transition-all hover:border-indigo-400">
+                        {schoolLogo ? (
+                           <img src={schoolLogo} alt="Logo Sekolah" className="w-full h-full object-cover" />
+                        ) : (
+                           <svg className="w-12 h-12 text-slate-300" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" /></svg>
+                        )}
+                        <label className="absolute inset-0 bg-slate-900/50 hidden group-hover:flex flex-col items-center justify-center transition-all cursor-pointer backdrop-blur-[2px]">
+                           <input type="file" accept="image/*" onChange={handleLogoUpload} className="hidden" />
+                           <svg className="w-8 h-8 text-white mb-2" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M3 9a2 2 0 012-2h.93a2 2 0 001.664-.89l.812-1.22A2 2 0 0110.07 4h3.86a2 2 0 011.664.89l.812 1.22A2 2 0 0018.07 7H19a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V9z" /><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M15 13a3 3 0 11-6 0 3 3 0 016 0z" /></svg>
+                           <span className="text-[11px] font-bold text-white text-center px-2 tracking-wide">Ubah Logo</span>
+                        </label>
+                      </div>
+                      <p className="text-[11px] font-medium text-slate-500 text-center px-4">Format 1:1 disarankan. Maks 500KB.</p>
+                    </div>
+
+                    {/* Bagian Kanan: Formulir Teks */}
+                    <div className="flex-1">
+                      <form onSubmit={handleSaveSchoolInfo} className="space-y-6">
+                        <div>
+                          <label className="block text-[13px] font-bold text-slate-600 mb-2">Nama Sekolah</label>
+                          <input type="text" value={schoolName} onChange={(e) => setSchoolName(e.target.value)} required className={clay.input} />
+                        </div>
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
+                          <div>
+                            <label className="block text-[13px] font-bold text-slate-600 mb-2">Nama Kepala Sekolah</label>
+                            <input type="text" value={headmasterName} onChange={(e) => setHeadmasterName(e.target.value)} required className={clay.input} />
+                          </div>
+                          <div>
+                            <label className="block text-[13px] font-bold text-slate-600 mb-2">NIP Kepala Sekolah</label>
+                            <input type="text" value={headmasterNIP} onChange={(e) => setHeadmasterNIP(e.target.value)} required className={clay.input} />
+                          </div>
+                        </div>
+                        <div className="pt-4 border-t border-slate-200/50">
+                          <button type="submit" className={`${clay.btnPrimary} w-full md:w-auto px-8`}>
+                            Simpan Perubahan
+                          </button>
+                        </div>
+                      </form>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            )}
+
             {/* --- KELOLA AKUN (HANYA KEPALA SEKOLAH) --- */}
             {activeTab === 'kelola_akun' && currentRole === 'Kepala Sekolah' && (
               <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 animate-fade-in-up">
                 
-                {/* Kiri: Pengaturan Logo & Form Akun */}
-                <div className="flex flex-col gap-6 h-fit">
+                {/* Kiri: Form Akun */}
+                <div className={`${clay.card} p-6 h-fit`}>
+                  <h3 className="text-lg font-extrabold text-slate-800 mb-2 tracking-tight">
+                    {editingUserId ? 'Edit Akun Pengguna' : 'Tambah Akun Baru'}
+                  </h3>
+                  <p className="text-xs font-semibold text-slate-400 uppercase tracking-widest mb-6 border-b border-slate-200/50 pb-3">Formulir Hak Akses</p>
                   
-                  {/* Panel Pengaturan Logo Sekolah */}
-                  <div className={`${clay.card} p-6`}>
-                    <h3 className="text-lg font-extrabold text-slate-800 mb-2 tracking-tight">Identitas Sekolah</h3>
-                    <p className="text-xs font-semibold text-slate-400 uppercase tracking-widest mb-4 border-b border-slate-200/50 pb-3">Logo Sistem</p>
-                    
-                    <div className="flex flex-col items-center gap-4">
-                      <div className="w-24 h-24 rounded-[24px] bg-slate-100 border-2 border-dashed border-slate-300 flex items-center justify-center overflow-hidden shadow-[inset_2px_2px_4px_rgba(148,163,184,0.2)] relative group transition-all hover:border-indigo-400">
-                        {schoolLogo ? (
-                           <img src={schoolLogo} alt="Logo Sekolah" className="w-full h-full object-cover" />
-                        ) : (
-                           <svg className="w-8 h-8 text-slate-300" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" /></svg>
-                        )}
-                        <label className="absolute inset-0 bg-slate-900/50 hidden group-hover:flex flex-col items-center justify-center transition-all cursor-pointer backdrop-blur-[2px]">
-                           <input type="file" accept="image/*" onChange={handleLogoUpload} className="hidden" />
-                           <svg className="w-6 h-6 text-white mb-1" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M3 9a2 2 0 012-2h.93a2 2 0 001.664-.89l.812-1.22A2 2 0 0110.07 4h3.86a2 2 0 011.664.89l.812 1.22A2 2 0 0018.07 7H19a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V9z" /><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M15 13a3 3 0 11-6 0 3 3 0 016 0z" /></svg>
-                           <span className="text-[9px] font-bold text-white text-center px-2 tracking-wide">Ubah Logo</span>
-                        </label>
-                      </div>
-                      <p className="text-[10px] font-medium text-slate-500 text-center px-2">Arahkan/klik area gambar untuk mengganti logo. Maksimal 500KB (Format 1:1 disarankan).</p>
+                  <form onSubmit={handleSaveUser} className="space-y-4">
+                    <div>
+                      <label className="block text-[12px] font-bold text-slate-600 mb-1.5">Nama Akun/Divisi</label>
+                      <input 
+                        type="text" 
+                        placeholder="Contoh: Tim Kurikulum Baru" 
+                        value={manageName} 
+                        onChange={(e) => setManageName(e.target.value)} 
+                        required 
+                        className={clay.input} 
+                      />
                     </div>
-                  </div>
-
-                  {/* Panel Formulir Tambah/Edit Akun */}
-                  <div className={`${clay.card} p-6`}>
-                    <h3 className="text-lg font-extrabold text-slate-800 mb-2 tracking-tight">
-                      {editingUserId ? 'Edit Akun Pengguna' : 'Tambah Akun Baru'}
-                    </h3>
-                    <p className="text-xs font-semibold text-slate-400 uppercase tracking-widest mb-6 border-b border-slate-200/50 pb-3">Formulir Hak Akses</p>
                     
-                    <form onSubmit={handleSaveUser} className="space-y-4">
-                      <div>
-                        <label className="block text-[12px] font-bold text-slate-600 mb-1.5">Nama Akun/Divisi</label>
-                        <input 
-                          type="text" 
-                          placeholder="Contoh: Tim Kurikulum Baru" 
-                          value={manageName} 
-                          onChange={(e) => setManageName(e.target.value)} 
-                          required 
-                          className={clay.input} 
-                        />
-                      </div>
-                      
-                      <div>
-                        <label className="block text-[12px] font-bold text-slate-600 mb-1.5">Username Login</label>
-                        <input 
-                          type="text" 
-                          placeholder="Contoh: kaprog_tkj" 
-                          value={manageUsername} 
-                          onChange={(e) => setManageUsername(e.target.value)} 
-                          required 
-                          disabled={editingUserId !== null}
-                          className={`${clay.input} disabled:opacity-50`} 
-                        />
-                      </div>
+                    <div>
+                      <label className="block text-[12px] font-bold text-slate-600 mb-1.5">Username Login</label>
+                      <input 
+                        type="text" 
+                        placeholder="Contoh: kaprog_tkj" 
+                        value={manageUsername} 
+                        onChange={(e) => setManageUsername(e.target.value)} 
+                        required 
+                        disabled={editingUserId !== null}
+                        className={`${clay.input} disabled:opacity-50`} 
+                      />
+                    </div>
 
-                      <div>
-                        <label className="block text-[12px] font-bold text-slate-600 mb-1.5">Pilih Peran (Role)</label>
-                        <select
-                          value={manageRole}
-                          onChange={(e) => setManageRole(e.target.value)}
-                          className={`${clay.input} appearance-none py-3.5`}
+                    <div>
+                      <label className="block text-[12px] font-bold text-slate-600 mb-1.5">Pilih Peran (Role)</label>
+                      <select
+                        value={manageRole}
+                        onChange={(e) => setManageRole(e.target.value)}
+                        className={`${clay.input} appearance-none py-3.5`}
+                      >
+                        <option value="Kesiswaan">Kesiswaan</option>
+                        <option value="Kurikulum">Kurikulum</option>
+                        <option value="Hubin">Hubin</option>
+                        <option value="Kaprog TKJ">Kaprog TKJ</option>
+                        <option value="Kaprog TKR">Kaprog TKR</option>
+                        <option value="Kaprog MP">Kaprog MP</option>
+                        <option value="Yayasan">Yayasan</option>
+                      </select>
+                    </div>
+
+                    <div>
+                      <label className="block text-[12px] font-bold text-slate-600 mb-1.5">Tetapkan Kata Sandi</label>
+                      <input 
+                        type="text" 
+                        placeholder="Masukkan kata sandi baru"
+                        value={managePassword} 
+                        onChange={(e) => setManagePassword(e.target.value)}
+                        required
+                        className={clay.input} 
+                      />
+                    </div>
+
+                    <div className="pt-2 flex gap-3">
+                      {editingUserId && (
+                        <button 
+                          type="button" 
+                          onClick={() => {
+                            setEditingUserId(null); setManageName(''); setManageUsername(''); setManagePassword(''); setManageRole('Kaprog TKJ');
+                          }} 
+                          className={`${clay.btnSecondary} py-2 px-4 text-xs font-bold w-auto`}
                         >
-                          <option value="Kesiswaan">Kesiswaan</option>
-                          <option value="Kurikulum">Kurikulum</option>
-                          <option value="Hubin">Hubin</option>
-                          <option value="Kaprog TKJ">Kaprog TKJ</option>
-                          <option value="Kaprog TKR">Kaprog TKR</option>
-                          <option value="Kaprog MP">Kaprog MP</option>
-                          <option value="Yayasan">Yayasan</option>
-                        </select>
-                      </div>
-
-                      <div>
-                        <label className="block text-[12px] font-bold text-slate-600 mb-1.5">Tetapkan Kata Sandi</label>
-                        <input 
-                          type="text" 
-                          placeholder="Masukkan kata sandi baru"
-                          value={managePassword} 
-                          onChange={(e) => setManagePassword(e.target.value)}
-                          required
-                          className={clay.input} 
-                        />
-                      </div>
-
-                      <div className="pt-2 flex gap-3">
-                        {editingUserId && (
-                          <button 
-                            type="button" 
-                            onClick={() => {
-                              setEditingUserId(null); setManageName(''); setManageUsername(''); setManagePassword(''); setManageRole('Kaprog TKJ');
-                            }} 
-                            className={`${clay.btnSecondary} py-2 px-4 text-xs font-bold w-auto`}
-                          >
-                            Batal
-                          </button>
-                        )}
-                        <button type="submit" className={`${clay.btnPrimary} py-2 px-5 text-xs font-bold flex-1`}>
-                          {editingUserId ? 'Simpan Perubahan' : 'Buat Akun'}
+                          Batal
                         </button>
-                      </div>
-                    </form>
-                  </div>
+                      )}
+                      <button type="submit" className={`${clay.btnPrimary} py-2 px-5 text-xs font-bold flex-1`}>
+                        {editingUserId ? 'Simpan Perubahan' : 'Buat Akun'}
+                      </button>
+                    </div>
+                  </form>
                 </div>
 
                 {/* Panel Daftar Pengguna */}
