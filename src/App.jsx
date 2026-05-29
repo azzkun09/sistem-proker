@@ -161,6 +161,9 @@ export default function App() {
   const [activeTab, setActiveTab] = useState('dashboard');
   const [notification, setNotification] = useState(null);
 
+  // Mode Print (PDF Export)
+  const [isPrintMode, setIsPrintMode] = useState(false);
+
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
   const [selectedFilterDivisi, setSelectedFilterDivisi] = useState('Semua');
@@ -411,7 +414,6 @@ export default function App() {
     }
   };
 
-  // --- FUNCTION: handlePhotoUpload ---
   const handlePhotoUpload = (e) => {
     const file = e.target.files[0];
     if (file) {
@@ -631,6 +633,143 @@ export default function App() {
   };
 
   // --- RENDERING VIEWS ---
+
+  // 1. View Laporan Print Out (Tampil Jika Tombol Ekspor Ditekan)
+  if (isPrintMode) {
+    const completedPrograms = filterByStatus(['completed']);
+    const pendingPrograms = programs.filter(p => p.status !== 'completed'); // Semua yang belum selesai
+
+    return (
+      <div className="bg-slate-200 min-h-screen pb-10 w-full overflow-y-auto print:bg-white print:p-0">
+        {/* Print Styles */}
+        <style>{`
+          @media print {
+            .no-print { display: none !important; }
+            body, html { background-color: white !important; margin: 0; padding: 0; }
+            @page { size: A4 portrait; margin: 15mm; }
+            .print-break-inside-avoid { break-inside: avoid; page-break-inside: avoid; }
+          }
+        `}</style>
+        
+        {/* Controls Bar (Sembunyi saat cetak sungguhan) */}
+        <div className="no-print max-w-[210mm] mx-auto bg-white p-4 rounded-xl shadow-md my-6 flex justify-between items-center sticky top-4 z-50 border border-slate-300">
+          <p className="text-sm font-bold text-slate-700">Pratinjau Cetak Laporan (A4)</p>
+          <div className="flex gap-3">
+            <button onClick={() => setIsPrintMode(false)} className="px-4 py-2 bg-slate-100 text-slate-700 font-bold rounded-lg text-sm hover:bg-slate-200 transition-all">Kembali</button>
+            <button onClick={() => window.print()} className="px-5 py-2 bg-indigo-600 text-white font-bold rounded-lg text-sm shadow-md hover:bg-indigo-700 transition-all flex items-center gap-2">
+              <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M17 17h2a2 2 0 002-2v-4a2 2 0 00-2-2H5a2 2 0 00-2 2v4a2 2 0 002 2h2m2 4h6a2 2 0 002-2v-4a2 2 0 00-2-2H9a2 2 0 00-2 2v4a2 2 0 002 2zm8-12V5a2 2 0 00-2-2H9a2 2 0 00-2 2v4h10z" /></svg>
+              Cetak / Simpan PDF
+            </button>
+          </div>
+        </div>
+
+        {/* Kertas A4 */}
+        <div className="max-w-[210mm] mx-auto bg-white text-black font-serif shadow-2xl print:shadow-none p-10 md:p-12 min-h-[297mm] border border-slate-300 print:border-none">
+          
+          {/* Kop Surat */}
+          <div className="flex items-center justify-between border-b-4 border-double border-slate-900 pb-5 mb-8">
+            <div className="w-24 h-24 shrink-0 overflow-hidden flex items-center justify-center">
+               {schoolLogo ? <img src={schoolLogo} className="w-full h-full object-contain" alt="Logo" /> : <div className="w-20 h-20 bg-slate-200 rounded-full"></div>}
+            </div>
+            <div className="text-center flex-1 px-4">
+              <h1 className="text-2xl font-black uppercase tracking-widest text-slate-900">SMK Bina Siswa Mandiri Limbangan</h1>
+              <p className="text-[13px] font-medium text-slate-700 mt-1 uppercase">Sistem Manajemen Program Kerja Digital (BSM SmartPro)</p>
+              <p className="text-[11px] font-bold text-slate-500 mt-1 italic">#BeraniBeda #SantunTerampilUnggul</p>
+            </div>
+          </div>
+          
+          <h2 className="text-center font-bold text-lg mb-8 underline underline-offset-4 uppercase">Laporan Evaluasi & Pelaksanaan Program Kerja</h2>
+          
+          <div className="space-y-10">
+            {/* BAGIAN A: PROGRAM TERLAKSANA */}
+            <section>
+              <h3 className="font-bold text-md mb-4 bg-slate-100 p-2.5 border-l-4 border-slate-800 uppercase tracking-wide">A. Rincian Program Terlaksana</h3>
+              {completedPrograms.length === 0 ? (
+                <p className="text-sm text-slate-500 italic px-4">Belum ada program yang selesai terlaksana.</p>
+              ) : (
+                <div className="space-y-6">
+                  {completedPrograms.map((prog, idx) => (
+                    <div key={prog.id} className="flex flex-col sm:flex-row gap-6 border-b border-slate-300 pb-6 print-break-inside-avoid px-2">
+                       <div className="flex-1">
+                         <h4 className="font-bold text-[15px] uppercase">{idx+1}. {prog.title}</h4>
+                         <table className="mt-2 text-[13px] text-slate-800 w-full mb-3">
+                           <tbody>
+                             <tr><td className="w-28 font-semibold py-1 align-top">Divisi Pengusul</td><td className="w-4 align-top">:</td><td className="py-1 align-top">{prog.proposer}</td></tr>
+                             <tr><td className="font-semibold py-1 align-top">Jenis Program</td><td className="align-top">:</td><td className="py-1 align-top">{prog.programType || 'Bulanan'}</td></tr>
+                             <tr><td className="font-semibold py-1 align-top">Waktu Laporan</td><td className="align-top">:</td><td className="py-1 align-top">{prog.report?.reportDate}</td></tr>
+                           </tbody>
+                         </table>
+                         <div className="text-[13px] bg-slate-50 p-3 border border-slate-200 rounded">
+                           <p className="font-bold mb-1 underline">Evaluasi Kegiatan:</p>
+                           <p className="whitespace-pre-line text-justify leading-relaxed">{prog.report?.description}</p>
+                         </div>
+                       </div>
+                       
+                       {/* Menampilkan Gambar ke dalam PDF */}
+                       {prog.report?.photoUrl && (
+                         <div className="sm:w-56 shrink-0 flex flex-col items-center justify-start mt-2 sm:mt-0">
+                            <div className="border-4 border-slate-200 p-1 w-full bg-white shadow-sm">
+                              <img src={prog.report.photoUrl} className="w-full h-auto object-cover aspect-video" alt="Dokumentasi Kegiatan"/>
+                            </div>
+                            <p className="text-[10px] text-center mt-2 text-slate-600 font-bold italic">Lampiran: Bukti Dokumentasi Kegiatan</p>
+                         </div>
+                       )}
+                    </div>
+                  ))}
+                </div>
+              )}
+            </section>
+            
+            {/* BAGIAN B: PROGRAM BERJALAN & ANTREAN */}
+            <section className="print-break-inside-avoid">
+              <h3 className="font-bold text-md mb-4 bg-slate-100 p-2.5 border-l-4 border-slate-800 uppercase tracking-wide">B. Daftar Program Belum Terlaksana / Berjalan</h3>
+              {pendingPrograms.length === 0 ? (
+                 <p className="text-sm text-slate-500 italic px-4">Semua program telah diselesaikan.</p>
+              ) : (
+                <table className="w-full text-[12px] border-collapse border border-slate-400">
+                  <thead className="bg-slate-200 text-slate-900 font-bold uppercase">
+                    <tr>
+                      <th className="border border-slate-400 p-2.5 w-10 text-center">No</th>
+                      <th className="border border-slate-400 p-2.5 text-left">Nama Program</th>
+                      <th className="border border-slate-400 p-2.5 text-left w-28">Divisi</th>
+                      <th className="border border-slate-400 p-2.5 text-left w-24">Jenis</th>
+                      <th className="border border-slate-400 p-2.5 text-left w-32">Status Terkini</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {pendingPrograms.map((prog, idx) => (
+                      <tr key={prog.id} className="text-slate-800">
+                        <td className="border border-slate-400 p-2.5 text-center">{idx+1}</td>
+                        <td className="border border-slate-400 p-2.5 font-bold">{prog.title}</td>
+                        <td className="border border-slate-400 p-2.5">{prog.proposer}</td>
+                        <td className="border border-slate-400 p-2.5">{prog.programType || '-'}</td>
+                        <td className="border border-slate-400 p-2.5 font-medium italic">
+                          {prog.status === 'pending_approval' ? 'Menunggu Izin Kepsek' : prog.status === 'approved_pelaksanaan' ? 'Masa Pelaksanaan' : 'Menunggu Review Kepsek'}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              )}
+            </section>
+          </div>
+          
+          {/* Tanda Tangan */}
+          <div className="mt-20 flex justify-end print-break-inside-avoid">
+            <div className="text-center w-72">
+                <p className="text-[14px]">Limbangan, {new Date().toLocaleDateString('id-ID', { year: 'numeric', month: 'long', day: 'numeric' })}</p>
+                <p className="font-bold mt-1 text-[14px]">Kepala Sekolah,</p>
+                <div className="h-24"></div> {/* Area kosong untuk tanda tangan basah */}
+                <p className="font-bold text-[15px] underline underline-offset-4">Dr. Ahmad Fauzi, M.Pd.</p>
+                <p className="text-[13px] mt-0.5">NIP. 19800101 200501 1 001</p>
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // 2. View Halaman Login
   if (!isAuthenticated) {
     const defaultTheme = ROLE_THEMES['default'];
     return (
@@ -917,6 +1056,13 @@ export default function App() {
              <div className={`px-4 py-2 ${theme.accent} border border-white/40 rounded-xl shadow-sm font-bold text-[12px] hidden sm:block transition-colors duration-1000`}>
                Mode: {currentRole}
              </div>
+             {/* TOMBOL CETAK LAPORAN - HANYA UNTUK KEPALA SEKOLAH */}
+             {currentRole === 'Kepala Sekolah' && (
+               <button onClick={() => setIsPrintMode(true)} className="hidden sm:flex ml-2 px-4 py-2 bg-slate-800 text-white font-bold rounded-xl shadow-md hover:bg-slate-700 active:scale-95 transition-all text-[12px] items-center gap-2">
+                  <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 17h2a2 2 0 002-2v-4a2 2 0 00-2-2H5a2 2 0 00-2 2v4a2 2 0 002 2h2m2 4h6a2 2 0 002-2v-4a2 2 0 00-2-2H9a2 2 0 00-2 2v4a2 2 0 002 2zm8-12V5a2 2 0 00-2-2H9a2 2 0 00-2 2v4h10z" /></svg>
+                  Cetak PDF
+               </button>
+             )}
           </div>
         </header>
 
@@ -953,6 +1099,16 @@ export default function App() {
             {activeTab === 'dashboard' && (
               <div className="space-y-6">
                 
+                {/* TOMBOL CETAK PDF KHUSUS MOBILE TAMPIL DI SINI */}
+                {currentRole === 'Kepala Sekolah' && (
+                  <div className="sm:hidden mb-2 animate-fade-in-up">
+                    <button onClick={() => setIsPrintMode(true)} className="w-full py-3 bg-slate-800 text-white font-bold rounded-[20px] shadow-[0_4px_12px_rgba(0,0,0,0.2)] active:scale-95 transition-all text-[13px] flex items-center justify-center gap-2">
+                       <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 17h2a2 2 0 002-2v-4a2 2 0 00-2-2H5a2 2 0 00-2 2v4a2 2 0 002 2h2m2 4h6a2 2 0 002-2v-4a2 2 0 00-2-2H9a2 2 0 00-2 2v4a2 2 0 002 2zm8-12V5a2 2 0 00-2-2H9a2 2 0 00-2 2v4h10z" /></svg>
+                       Cetak / Eksport Laporan Akhir (PDF)
+                    </button>
+                  </div>
+                )}
+
                 {/* Stats Grid */}
                 <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 md:gap-6">
                   {[
@@ -1288,7 +1444,7 @@ export default function App() {
                                   <label className="flex-1 flex flex-col items-center justify-center p-4 bg-indigo-50 border border-indigo-200 rounded-[16px] cursor-pointer hover:bg-indigo-100 transition-all shadow-sm animate-fade-in-up">
                                     <svg className="w-6 h-6 mb-2 text-indigo-600" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 9a2 2 0 012-2h.93a2 2 0 001.664-.89l.812-1.22A2 2 0 0110.07 4h3.86a2 2 0 011.664.89l.812 1.22A2 2 0 0018.07 7H19a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V9z" /><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 13a3 3 0 11-6 0 3 3 0 016 0z" /></svg>
                                     <span className="text-[11px] font-bold text-indigo-700 text-center">Buka Kamera</span>
-                                    <input type="file" accept="image/*" capture="environment" onChange={handlePhotoUpload} className="hidden" />
+                                    <button type="button" onClick={startCamera} className="hidden"></button>
                                   </label>
                                 </div>
                               </div>
