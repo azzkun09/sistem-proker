@@ -148,6 +148,8 @@ export default function App() {
 
   // Form & UI States
   const [newTitle, setNewTitle] = useState('');
+  const [newProgramType, setNewProgramType] = useState('Bulanan');
+  const [newWeeklySchedule, setNewWeeklySchedule] = useState('Seminggu Sekali');
   const [newDate, setNewDate] = useState('');
   const [newDescription, setNewDescription] = useState('');
   const [newBudget, setNewBudget] = useState('');
@@ -375,12 +377,18 @@ export default function App() {
   // --- CRUD FUNCTIONS ---
   const handleCreateProgram = (e) => {
     e.preventDefault();
-    if (!newTitle || !newDate || !newDescription) {
+    
+    // Menyesuaikan nilai tanggal pelaksanaan berdasarkan tipe program
+    let finalDate = newDate;
+    if (newProgramType === 'Harian') finalDate = 'Setiap Hari';
+    if (newProgramType === 'Mingguan') finalDate = newWeeklySchedule;
+
+    if (!newTitle || !finalDate || !newDescription) {
       showNotification('Mohon lengkapi seluruh field pengajuan!', 'error'); return;
     }
     const newProgramId = `prog-${Date.now()}`;
     const newProgram = {
-      id: newProgramId, title: newTitle, proposer: currentRole, proposedDate: newDate,
+      id: newProgramId, title: newTitle, proposer: currentRole, proposedDate: finalDate, programType: newProgramType,
       description: newDescription, budget: Number(newBudget) || 0, status: 'pending_approval',
       approvals: { kepsek: false }, report: null
     };
@@ -388,7 +396,7 @@ export default function App() {
     setDoc(getProgramRef(newProgramId), newProgram)
       .then(() => {
         showNotification('Pengajuan berhasil dikirim.');
-        setNewTitle(''); setNewDate(''); setNewDescription(''); setNewBudget('');
+        setNewTitle(''); setNewDate(''); setNewDescription(''); setNewBudget(''); setNewProgramType('Bulanan'); setNewWeeklySchedule('Seminggu Sekali');
         setActiveTab('antrean_pengajuan');
       })
       .catch(err => showNotification('Gagal mengirim pengajuan.', 'error'));
@@ -400,6 +408,23 @@ export default function App() {
       setDoc(getProgramRef(id), { ...progToApprove, approvals: { kepsek: true }, status: 'approved_pelaksanaan' })
         .then(() => showNotification('Proposal disetujui.'))
         .catch(err => showNotification('Gagal menyetujui proposal.', 'error'));
+    }
+  };
+
+  // --- FUNCTION: handlePhotoUpload ---
+  const handlePhotoUpload = (e) => {
+    const file = e.target.files[0];
+    if (file) {
+      if (file.size > 300 * 1024) {
+        showNotification('Ukuran foto terlalu besar! Maksimal 300KB.', 'error');
+        e.target.value = '';
+        return;
+      }
+      const reader = new FileReader();
+      reader.onloadend = () => {
+        setReportPhoto(reader.result);
+      };
+      reader.readAsDataURL(file);
     }
   };
 
@@ -683,8 +708,9 @@ export default function App() {
                 </svg>
               )}
             </div>
-            <h1 className="text-xl md:text-2xl font-extrabold text-slate-800 tracking-tight leading-snug">Sistem Manajemen Program Kerja Sekolah</h1>
-            <p className="text-sm font-bold text-indigo-600 mt-2">SMK Bina Siswa Mandiri Limbangan</p>
+            <h1 className="text-2xl md:text-3xl font-extrabold text-slate-800 tracking-tight leading-snug">BSM SmartPro</h1>
+            <p className="text-sm font-bold text-indigo-600 mt-1">Sistem Manajemen Program Kerja Digital</p>
+            <p className="text-[11px] font-semibold text-slate-500 mt-2 tracking-wide">#BeraniBeda #SantunTerampilUnggul</p>
           </div>
 
           <form onSubmit={handleLogin} className="space-y-5">
@@ -786,8 +812,8 @@ export default function App() {
                 )}
               </div>
               <div className="flex flex-col overflow-hidden">
-                <span className="font-extrabold text-slate-800 tracking-tight text-[15px] leading-tight truncate">Proker SMK BSM</span>
-                <span className="font-bold text-indigo-600 text-[10px] truncate">Limbangan</span>
+                <span className="font-extrabold text-slate-800 tracking-tight text-[16px] leading-tight truncate">BSM SmartPro</span>
+                <span className="font-bold text-indigo-600 text-[10px] truncate">#BeraniBeda</span>
               </div>
               <button className="ml-auto lg:hidden text-slate-500 p-1" onClick={() => setIsMobileMenuOpen(false)}>
                 <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
@@ -855,7 +881,7 @@ export default function App() {
         </div>
       </aside>
 
-      {/* MAIN CONTENT AREA DENGAN AKSELERASI TRANSISI */}
+      {/* MAIN CONTENT AREA */}
       <div className="flex-1 flex flex-col relative h-full gap-4 md:gap-5 overflow-hidden transition-all duration-200 ease-out">
         
         {/* Top Header - Glass Card */}
@@ -1050,13 +1076,46 @@ export default function App() {
                     
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                       <div>
-                        <label className="block text-[13px] font-bold text-slate-600 mb-2">Rencana Pelaksanaan</label>
-                        <input type="date" value={newDate} onChange={(e) => setNewDate(e.target.value)} required className={clay.input} />
+                        <label className="block text-[13px] font-bold text-slate-600 mb-2">Jenis Program</label>
+                        <select value={newProgramType} onChange={(e) => setNewProgramType(e.target.value)} className={`${clay.input} appearance-none py-3.5`}>
+                          <option value="Harian">Harian</option>
+                          <option value="Mingguan">Mingguan</option>
+                          <option value="Bulanan">Bulanan</option>
+                          <option value="Tahunan">Tahunan</option>
+                        </select>
                       </div>
                       <div>
                         <label className="block text-[13px] font-bold text-slate-600 mb-2">Estimasi Anggaran (Rp)</label>
                         <input type="number" placeholder="0" value={newBudget} onChange={(e) => setNewBudget(e.target.value)} className={clay.input} />
                       </div>
+                    </div>
+
+                    <div className="grid grid-cols-1 gap-6">
+                      {newProgramType === 'Harian' && (
+                        <div className="px-5 py-4 bg-indigo-50/50 rounded-[20px] border border-indigo-100/50 shadow-inner">
+                           <p className="text-[13px] font-bold text-indigo-600 flex items-center gap-2">
+                             <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
+                             Program ini akan dicatat untuk dilaksanakan Setiap Hari.
+                           </p>
+                        </div>
+                      )}
+                      {newProgramType === 'Mingguan' && (
+                        <div>
+                          <label className="block text-[13px] font-bold text-slate-600 mb-2">Jadwal Mingguan</label>
+                          <select value={newWeeklySchedule} onChange={(e) => setNewWeeklySchedule(e.target.value)} className={`${clay.input} appearance-none py-3.5`}>
+                            <option value="Seminggu Sekali">Seminggu Sekali</option>
+                            <option value="Dua Minggu Sekali">Dua Minggu Sekali</option>
+                            <option value="Minggu Pertama">Minggu Pertama</option>
+                            <option value="Minggu Kedua">Minggu Kedua</option>
+                          </select>
+                        </div>
+                      )}
+                      {(newProgramType === 'Bulanan' || newProgramType === 'Tahunan') && (
+                        <div>
+                          <label className="block text-[13px] font-bold text-slate-600 mb-2">Rencana Pelaksanaan (Tanggal)</label>
+                          <input type="date" value={newDate} onChange={(e) => setNewDate(e.target.value)} required className={clay.input} />
+                        </div>
+                      )}
                     </div>
 
                     <div>
@@ -1117,6 +1176,7 @@ export default function App() {
                         <div className="flex-1">
                           <div className="flex items-center gap-3 mb-4 flex-wrap">
                              <ClayBadge color="gray">{prog.proposer}</ClayBadge>
+                             <ClayBadge color="indigo">{prog.programType || 'Bulanan'}</ClayBadge>
                              <span className="text-[13px] font-bold text-slate-500 flex items-center gap-1.5">
                                <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" /></svg>
                                {prog.proposedDate}
@@ -1217,7 +1277,7 @@ export default function App() {
                             </div>
                           ) : (
                             !isCameraActive && (
-                              <div className="w-full flex flex-col items-center justify-center border-2 border-dashed border-slate-300 rounded-[24px] bg-slate-50/50 p-5 min-h-[180px] animate-scale-in">
+                              <div className="w-full flex flex-col items-center justify-center border-2 border-dashed border-slate-300 rounded-[24px] bg-white/50 p-5 min-h-[180px] animate-scale-in">
                                 <p className="text-[12px] font-bold text-slate-500 mb-4 text-center">Pilih metode dokumentasi (Maks. 300KB)</p>
                                 <div className="flex flex-col sm:flex-row w-full gap-3 h-full">
                                   <label className="flex-1 flex flex-col items-center justify-center p-4 bg-white border border-slate-200 rounded-[16px] cursor-pointer hover:bg-slate-50 transition-all shadow-sm animate-fade-in-up">
@@ -1324,6 +1384,7 @@ export default function App() {
                             <div className="flex-1">
                                <div className="flex items-center flex-wrap gap-2 md:gap-3 mb-3">
                                  <ClayBadge color="gray">{prog.proposer}</ClayBadge>
+                                 <ClayBadge color="indigo">{prog.programType || 'Bulanan'}</ClayBadge>
                                  {prog.status === 'reported' ? <ClayBadge color="indigo">Menunggu Review</ClayBadge> : <ClayBadge color="gray">Masa Eksekusi</ClayBadge>}
                                </div>
                                <h4 className="font-extrabold text-slate-800 text-[15px] md:text-[16px]">{prog.title}</h4>
@@ -1379,8 +1440,9 @@ export default function App() {
                              </div>
                           )}
                           <div className="flex-1 flex flex-col justify-center">
-                             <div className="flex items-center gap-3 mb-3">
+                             <div className="flex items-center gap-3 mb-3 flex-wrap">
                                <ClayBadge color="gray">{prog.proposer}</ClayBadge>
+                               <ClayBadge color="indigo">{prog.programType || 'Bulanan'}</ClayBadge>
                                <span className="text-[11px] md:text-[12px] font-bold text-slate-400">Tgl: {prog.report?.reportDate}</span>
                              </div>
                              <h4 className="font-extrabold text-slate-800 text-[15px] md:text-[16px] mb-2">{prog.title}</h4>
