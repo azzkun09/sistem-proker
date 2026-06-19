@@ -662,18 +662,30 @@ export default function App() {
     if (!file) return;
     const reader = new FileReader();
     reader.onload = (event) => {
-      const rows = event.target.result.split('\n');
+      const text = event.target.result;
+      const rows = text.split('\n');
       let importCount = 0;
       
       rows.forEach((row, index) => {
-        if (index === 0) return;
-        const columns = row.trim().split(','); 
-        if (columns.length >= 4) {
+        if (index === 0 || !row.trim()) return; // Melewati header atau baris kosong
+        
+        // Membaca file menggunakan pemisah titik koma atau koma
+        const delimiter = row.includes(';') ? ';' : ',';
+        const columns = row.split(delimiter).map(col => col.trim()); 
+        
+        if (columns.length >= 3 && columns[0]) {
           const newId = `prog-import-${Date.now()}-${index}`;
           const importedProg = {
             id: newId,
-            title: columns[0].trim(), proposedDate: columns[1].trim(), budget: Number(columns[2].trim()) || 0,
-            description: columns[3].trim(), proposer: currentRole, status: 'pending_approval', approvals: { kepsek: false }, report: null
+            title: columns[0] || '', 
+            programType: columns[1] || 'Bulanan',
+            proposedDate: columns[2] || '', 
+            budget: Number(columns[3]) || 0,
+            description: columns[4] || '', 
+            proposer: currentRole, 
+            status: 'pending_approval', 
+            approvals: { kepsek: false }, 
+            report: null
           };
           setDoc(getProgramRef(newId), importedProg).catch(err => console.error(err));
           importCount++;
@@ -683,18 +695,28 @@ export default function App() {
       if (importCount > 0) {
         showNotification(`${importCount} program berhasil diimpor.`);
         setActiveTab('antrean_pengajuan');
+      } else {
+        showNotification('Gagal mengimpor. Pastikan file menggunakan format yang benar.', 'error');
       }
     };
-    reader.readAsText(file); e.target.value = '';
+    reader.readAsText(file); 
+    e.target.value = '';
   };
 
   const downloadTemplate = () => {
-    const headers = "Nama Program,Tanggal (YYYY-MM-DD),Anggaran,Deskripsi\n";
-    const sample = "Pentas Seni Terpadu,2026-10-20,15000000,Kegiatan pentas seni akhir tahun ajaran\n";
-    const blob = new Blob([headers + sample], { type: 'text/csv' });
+    const headers = "Nama Program;Jenis Program (Harian/Mingguan/Bulanan/Tahunan);Rencana Pelaksanaan (Tanggal / Jadwal);Estimasi Anggaran (Rp);Deskripsi Singkat\n";
+    const sample1 = "Pentas Seni Terpadu;Tahunan;2026-10-20;15000000;Kegiatan pentas seni akhir tahun ajaran\n";
+    const sample2 = "Pemeriksaan Kedisiplinan;Mingguan;Seminggu Sekali;0;Pemeriksaan atribut dan rambut siswa\n";
+    const sample3 = "Piket Menyambut Siswa;Harian;Setiap Hari;0;Guru dan Osis menyambut di gerbang\n";
+    
+    // Menambahkan BOM agar file dapat dibuka dengan rapi langsung dari Microsoft Excel sebagai kolom-kolom terpisah
+    const bom = "\uFEFF";
+    const blob = new Blob([bom + headers + sample1 + sample2 + sample3], { type: 'text/csv;charset=utf-8;' });
     const url = window.URL.createObjectURL(blob);
     const a = document.createElement('a');
-    a.href = url; a.download = 'Template_Pengajuan.csv'; a.click();
+    a.href = url; 
+    a.download = 'Template_Pengajuan_Program_Excel.csv'; 
+    a.click();
     window.URL.revokeObjectURL(url);
   };
 
@@ -1007,6 +1029,18 @@ export default function App() {
   const completedCount = filterByStatus(['completed']).length;
   const totalProgramsCount = pendingCount + pelaksanaanCount + completedCount;
 
+  const totalBudgetManagement = programs
+  .filter(prog => {
+    if (currentRole !== 'Kepala Sekolah') return false;
+
+    if (selectedFilterDivisi === 'Semua') {
+      return true;
+    }
+
+    return prog.proposer === selectedFilterDivisi;
+  })
+  .reduce((sum, prog) => sum + (prog.budget || 0), 0);
+
   // --- MAIN VIEW PORTAL ---
   return (
     <div className="flex h-screen bg-[#F6F8FC] p-2 md:p-4 gap-4 font-sans antialiased selection:bg-indigo-200 selection:text-indigo-900 overflow-hidden relative z-0 w-full">
@@ -1265,7 +1299,7 @@ export default function App() {
                     { label: 'Terlaksana', value: completedCount, icon: 'M9 12l2 2 4-4M7.835 4.697a3.42 3.42 0 001.946-.806 3.42 3.42 0 014.438 0 3.42 3.42 0 001.946.806 3.42 3.42 0 013.138 3.138 3.42 3.42 0 00.806 1.946 3.42 3.42 0 010 4.438 3.42 3.42 0 00-.806 1.946 3.42 3.42 0 01-3.138 3.138 3.42 3.42 0 00-1.946.806 3.42 3.42 0 01-4.438 0 3.42 3.42 0 00-1.946-.806 3.42 3.42 0 01-3.138-3.138 3.42 3.42 0 00-.806-1.946 3.42 3.42 0 010-4.438 3.42 3.42 0 00.806-1.946 3.42 3.42 0 013.138-3.138z', color: 'text-emerald-600', bg: 'bg-emerald-50 border border-emerald-100' }
                   ].map((stat, i) => (
                     <div key={i} className={`${clay.cardSmall} p-6 flex flex-col items-center text-center justify-center animate-fade-in-up stagger-${i+1}`}>
-                      <div className={`p-4 rounded-[20px] shadow-sm ${stat.bg} ${stat.color} mb-4 transition-colors duration-1000`}>
+                      <div className={`p-4 rounded-[20px] shadow-[inset_1px_1px_2px_rgba(255,255,255,0.8),inset_-1px_-1px_2px_rgba(148,163,184,0.1)] ${stat.bg} ${stat.color} mb-4 transition-colors duration-1000`}>
                          <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}><path strokeLinecap="round" strokeLinejoin="round" d={stat.icon} /></svg>
                       </div>
                       <p className="text-4xl font-extrabold text-slate-800 tracking-tight drop-shadow-sm">{stat.value}</p>
@@ -1299,7 +1333,25 @@ export default function App() {
 
                 {/* Management Panels */}
                 {isManagement && (
-                  <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                  <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6">
+                    {currentRole === 'Kepala Sekolah' && (
+                      <div className={`${clay.card} p-6 animate-fade-in-up`}>
+                        <p className="text-sm font-bold text-slate-500 mb-2">
+                          Total Anggaran Pengajuan
+                        </p>
+
+                        <h2 className="text-3xl font-extrabold text-emerald-600">
+                          Rp {totalBudgetManagement.toLocaleString('id-ID')}
+                        </h2>
+
+                        <p className="text-xs text-slate-400 mt-2">
+                          Total seluruh anggaran pengajuan manajemen
+                          {selectedFilterDivisi !== 'Semua'
+                            ? ` (${selectedFilterDivisi})`
+                            : ''}
+                        </p>
+                      </div>
+                    )}
                     {/* Panel 1 */}
                     <div className={`${clay.card} flex flex-col animate-fade-in-up stagger-4`}>
                       <div className="px-6 md:px-8 py-6 flex justify-between items-center border-b border-slate-100">
@@ -1317,7 +1369,7 @@ export default function App() {
                             <div key={prog.id} className="bg-white/80 border border-slate-150 rounded-[20px] p-4 flex justify-between items-center shadow-[4px_6px_12px_rgba(148,163,184,0.06)]">
                               <div>
                                 <p className="font-bold text-[13px] text-slate-800">{prog.title}</p>
-                                <p className="text-[11px] font-semibold text-slate-400 mt-1">{prog.proposer}</p>
+                                <p className="text-[11px] font-semibold text-slate-500 mt-1">{prog.proposer}</p>
                               </div>
                               <span className="text-[11px] font-bold text-slate-500 ml-3 whitespace-nowrap bg-slate-100 px-3 py-1.5 rounded-xl border border-slate-200/50">
                                 {prog.status === 'pending_approval' ? 'Butuh ACC' : 'Belum Lapor'}
@@ -1438,14 +1490,14 @@ export default function App() {
                 <div className={`${clay.cardSmall} p-6 md:p-8 flex flex-col sm:flex-row items-center justify-between gap-6 animate-fade-in-up stagger-2`}>
                   <div className="text-center sm:text-left">
                     <h4 className="text-[15px] font-bold text-slate-800">Import Data Massal</h4>
-                    <p className="text-[13px] font-medium text-slate-500 mt-1">Gunakan file CSV untuk mengunggah sekaligus.</p>
+                    <p className="text-[13px] font-medium text-slate-500 mt-1">Gunakan template CSV agar baris dan kolom langsung rapi terbuka di Excel.</p>
                   </div>
                   <div className="flex flex-col sm:flex-row gap-4 w-full sm:w-auto">
-                     <button onClick={downloadTemplate} className={`${clay.btnSecondary} w-full sm:w-auto`}>
+                     <button type="button" onClick={downloadTemplate} className={`${clay.btnSecondary} w-full sm:w-auto`}>
                         Unduh Template
                      </button>
                      <label className={`${clay.btnPrimary} cursor-pointer w-full sm:w-auto`}>
-                        Upload CSV
+                        Upload Data
                         <input type="file" accept=".csv" onChange={handleImportCSV} className="hidden" />
                      </label>
                   </div>
