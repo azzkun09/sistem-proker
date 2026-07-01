@@ -166,6 +166,7 @@ export default function App() {
   // POPUP NOTIFICATIONS & MODAL CONFIRMATION
   const [notification, setNotification] = useState(null);
   const [confirmDialog, setConfirmDialog] = useState({ isOpen: false, title: '', message: '', onConfirm: null });
+  const [rejectProposalDialog, setRejectProposalDialog] = useState({ isOpen: false, programId: null, reason: '' });
 
   // Mode Print (PDF Export)
   const [isPrintMode, setIsPrintMode] = useState(false);
@@ -487,6 +488,21 @@ export default function App() {
 
   const getSubmittedDateLabel = (prog) => formatDisplayDate(getSubmittedDate(prog)) || '-';
 
+  const getProposalStatusLabel = (status) => {
+    const labels = {
+      pending_approval: 'Menunggu Izin Kepsek',
+      rejected: 'Ditolak / Perlu Revisi',
+      approved_pelaksanaan: 'Masa Pelaksanaan',
+      reported: 'Menunggu Review Kepsek',
+      completed: 'Selesai'
+    };
+    return labels[status] || 'Status Tidak Diketahui';
+  };
+
+  const getRejectionReason = (prog) => {
+    return prog?.rejectionReason || prog?.rejection?.reason || '';
+  };
+
   const getProgramSortKey = (prog) => {
     if (isISODate(prog?.report?.reportDate)) return prog.report.reportDate;
     const plannedDate = getProgramStartDate(prog);
@@ -563,11 +579,20 @@ export default function App() {
       if (!progToEdit) {
         showNotification('Data pengajuan tidak ditemukan.', 'error'); return;
       }
-      if (progToEdit.status !== 'pending_approval') {
+      if (!['pending_approval', 'rejected'].includes(progToEdit.status)) {
         showNotification('Pengajuan yang sudah di-ACC tidak dapat diedit lagi.', 'error'); return;
       }
 
-      setDoc(getProgramRef(editingProgramId), { ...progToEdit, ...payload })
+      setDoc(getProgramRef(editingProgramId), {
+        ...progToEdit,
+        ...payload,
+        status: 'pending_approval',
+        approvals: { ...(progToEdit.approvals || {}), kepsek: false },
+        rejectionReason: '',
+        rejectedAt: '',
+        rejectedBy: '',
+        revisionSubmittedAt: new Date().toISOString()
+      })
         .then(() => {
           showNotification('Pengajuan berhasil diperbarui.');
           resetProgramForm();
@@ -598,7 +623,7 @@ export default function App() {
   };
 
   const handleEditProgramClick = (prog) => {
-    if (prog.status !== 'pending_approval') {
+    if (!['pending_approval', 'rejected'].includes(prog.status)) {
       showNotification('Pengajuan yang sudah di-ACC tidak dapat diedit lagi.', 'error');
       return;
     }
@@ -664,12 +689,61 @@ export default function App() {
         budget: approvedBudget,
         approvals: { kepsek: true },
         status: 'approved_pelaksanaan',
+        rejectionReason: '',
+        rejectedAt: '',
+        rejectedBy: '',
         approvedAt: new Date().toISOString(),
         updatedAt: new Date().toISOString()
       })
         .then(() => showNotification('Proposal berhasil disetujui.'))
         .catch(err => showNotification('Gagal menyetujui proposal.', 'error'));
     }
+  };
+
+  const requestRejectProposal = (id) => {
+    const progToReject = programs.find(p => p.id === id);
+    if (!progToReject) {
+      showNotification('Data pengajuan tidak ditemukan.', 'error');
+      return;
+    }
+    if (currentRole !== 'Kepala Sekolah') {
+      showNotification('Hanya Kepala Sekolah yang dapat menolak pengajuan.', 'error');
+      return;
+    }
+    if (progToReject.status !== 'pending_approval') {
+      showNotification('Pengajuan hanya dapat ditolak sebelum di-ACC.', 'error');
+      return;
+    }
+    setRejectProposalDialog({ isOpen: true, programId: id, reason: getRejectionReason(progToReject) });
+  };
+
+  const handleConfirmRejectProposal = () => {
+    const reason = rejectProposalDialog.reason.trim();
+    if (!reason) {
+      showNotification('Mohon isi alasan penolakan terlebih dahulu.', 'error');
+      return;
+    }
+
+    const progToReject = programs.find(p => p.id === rejectProposalDialog.programId);
+    if (!progToReject) {
+      showNotification('Data pengajuan tidak ditemukan.', 'error');
+      return;
+    }
+
+    setDoc(getProgramRef(progToReject.id), {
+      ...progToReject,
+      status: 'rejected',
+      approvals: { ...(progToReject.approvals || {}), kepsek: false },
+      rejectionReason: reason,
+      rejectedAt: new Date().toISOString(),
+      rejectedBy: currentRole,
+      updatedAt: new Date().toISOString()
+    })
+      .then(() => {
+        showNotification('Pengajuan ditolak dan alasan sudah dikirim ke pengusul.', 'error');
+        setRejectProposalDialog({ isOpen: false, programId: null, reason: '' });
+      })
+      .catch(err => showNotification('Gagal menolak pengajuan.', 'error'));
   };
 
   const handleDeleteProgram = (id) => {
@@ -1125,7 +1199,12 @@ export default function App() {
                         <td className="border border-slate-400 p-2.5">{getProgramDateLabel(prog)}</td>
                         <td className="border border-slate-400 p-2.5">Rp {(prog.budget || 0).toLocaleString('id-ID')}</td>
                         <td className="border border-slate-400 p-2.5 font-medium italic">
-                          {prog.status === 'pending_approval' ? 'Menunggu Izin Kepsek' : prog.status === 'approved_pelaksanaan' ? 'Masa Pelaksanaan' : 'Menunggu Review Kepsek'}
+                          <div>{getProposalStatusLabel(prog.status)}</div>
+                          {prog.status === 'rejected' && getRejectionReason(prog) && (
+                            <div className="mt-1 text-[10px] not-italic font-normal leading-snug text-slate-700">
+                              Alasan: {getRejectionReason(prog)}
+                            </div>
+                          )}
                         </td>
                       </tr>
                     ))}
@@ -1272,7 +1351,8 @@ export default function App() {
   }
 
   // Menghitung statistik untuk Dashboard
-  const pendingCount = filterByStatus(['pending_approval']).length;
+  const proposalQueueStatuses = isProposerRole ? ['pending_approval', 'rejected'] : ['pending_approval'];
+  const pendingCount = filterByStatus(proposalQueueStatuses).length;
   const pelaksanaanCount = filterByStatus(['approved_pelaksanaan', 'reported']).length;
   const completedCount = filterByStatus(['completed']).length;
   const totalProgramsCount = pendingCount + pelaksanaanCount + completedCount;
@@ -1330,6 +1410,32 @@ export default function App() {
                 <button onClick={() => { confirmDialog.onConfirm(); setConfirmDialog({ ...confirmDialog, isOpen: false }); }} className={`${clay.btnDanger} flex-1`}>Ya, Lanjutkan</button>
               </div>
            </div>
+        </div>
+      )}
+
+      {rejectProposalDialog.isOpen && (
+        <div className="fixed inset-0 z-[110] flex items-center justify-center p-4 bg-slate-900/40 backdrop-blur-sm animate-fade-in-up">
+          <div className={`${clay.card} p-8 max-w-lg w-full`}>
+            <div className="flex items-start gap-4 mb-5">
+              <div className="w-14 h-14 bg-red-100 text-red-500 rounded-[20px] flex items-center justify-center border-2 border-white shadow-md shrink-0">
+                <svg className="w-7 h-7" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M12 9v2m0 4h.01M4.93 19h14.14c1.54 0 2.5-1.67 1.73-3L13.73 4c-.77-1.33-2.69-1.33-3.46 0L3.2 16c-.77 1.33.19 3 1.73 3z" /></svg>
+              </div>
+              <div>
+                <h3 className="text-lg font-extrabold text-slate-800 tracking-tight">Tolak Pengajuan</h3>
+                <p className="text-sm font-medium text-slate-500 mt-1">Tuliskan alasan agar pengusul tahu bagian yang perlu diperbaiki.</p>
+              </div>
+            </div>
+            <textarea
+              value={rejectProposalDialog.reason}
+              onChange={(e) => setRejectProposalDialog(prev => ({ ...prev, reason: e.target.value }))}
+              placeholder="Contoh: Nominal terlalu besar, mohon sesuaikan rincian anggaran dan ajukan kembali."
+              className="w-full min-h-[140px] px-4 py-3 bg-slate-100/60 border border-slate-200 rounded-[18px] text-[14px] font-medium text-slate-700 outline-none focus:bg-white focus:border-red-300 transition-all resize-none"
+            />
+            <div className="flex gap-3 justify-end mt-6">
+              <button onClick={() => setRejectProposalDialog({ isOpen: false, programId: null, reason: '' })} className={clay.btnSecondary}>Batal</button>
+              <button onClick={handleConfirmRejectProposal} className={clay.btnDanger}>Kirim Penolakan</button>
+            </div>
+          </div>
         </div>
       )}
 
@@ -1402,7 +1508,7 @@ export default function App() {
             {[
               { id: 'dashboard', label: 'Dashboard', icon: 'M4 5a1 1 0 011-1h4a1 1 0 011 1v4a1 1 0 01-1 1H5a1 1 0 01-1-1V5zM4 13a1 1 0 011-1h4a1 1 0 011 1v4a1 1 0 01-1 1H5a1 1 0 01-1-1v-4zM14 13a1 1 0 011-1h4a1 1 0 011 1v4a1 1 0 01-1 1h-4a1 1 0 01-1-1v-4z' },
               ...(isProposerRole ? [{ id: 'buat_pengajuan', label: 'Ajukan Program', icon: 'M12 4v16m8-8H4' }] : []),
-              { id: 'antrean_pengajuan', label: 'Persetujuan', icon: 'M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z', count: filterByStatus(['pending_approval']).length },
+              { id: 'antrean_pengajuan', label: 'Persetujuan', icon: 'M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z', count: filterByStatus(proposalQueueStatuses).length },
               { id: 'pelaksanaan', label: 'Pelaksanaan', icon: 'M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4', count: filterByStatus(['approved_pelaksanaan', 'reported']).length },
               { id: 'selesai', label: 'Arsip Selesai', icon: 'M5 8h14M5 8a2 2 0 110-4h14a2 2 0 110 4M5 8v10a2 2 0 002 2h10a2 2 0 002-2V8m-9 4h4' },
               ...(currentRole === 'Kepala Sekolah' ? [
@@ -1610,17 +1716,17 @@ export default function App() {
                         <ClayBadge color="yellow">Pending</ClayBadge>
                       </div>
                       <div className="flex-1 overflow-y-auto max-h-[350px] px-4 md:px-6 py-6 space-y-3">
-                        {filterByStatus(['pending_approval', 'approved_pelaksanaan']).length === 0 ? (
+                        {filterByStatus(['pending_approval', 'rejected', 'approved_pelaksanaan']).length === 0 ? (
                            <div className="p-4 text-center text-[13px] font-medium text-slate-400">Semua telah ditindaklanjuti.</div>
                         ) : (
-                          filterByStatus(['pending_approval', 'approved_pelaksanaan']).map(prog => (
+                          filterByStatus(['pending_approval', 'rejected', 'approved_pelaksanaan']).map(prog => (
                             <div key={prog.id} className="bg-white/80 border border-slate-150 rounded-[20px] p-4 flex justify-between items-center shadow-[4px_6px_12px_rgba(148,163,184,0.06)]">
                               <div>
                                 <p className="font-bold text-[13px] text-slate-800">{prog.title}</p>
                                 <p className="text-[11px] font-semibold text-slate-500 mt-1">{prog.proposer}</p>
                               </div>
                               <span className="text-[11px] font-bold text-slate-500 ml-3 whitespace-nowrap bg-slate-100 px-3 py-1.5 rounded-xl border border-slate-200/50">
-                                {prog.status === 'pending_approval' ? 'Butuh ACC' : 'Belum Lapor'}
+                                {prog.status === 'pending_approval' ? 'Butuh ACC' : prog.status === 'rejected' ? 'Perlu Revisi' : 'Belum Lapor'}
                               </span>
                             </div>
                           ))
@@ -1777,7 +1883,7 @@ export default function App() {
                 </div>
                 
                 <div className="p-4 md:p-6 space-y-6">
-                  {filterByStatus(['pending_approval']).length === 0 ? (
+                  {filterByStatus(proposalQueueStatuses).length === 0 ? (
                     <div className="py-12 flex flex-col items-center justify-center text-center">
                       <div className="w-16 h-16 bg-[#0F172A]/10 rounded-3xl shadow-[inset_4px_4px_8px_rgba(0,0,0,0.05),inset_-2px_-2px_4px_rgba(255,255,255,0.8)] flex items-center justify-center mb-6">
                         <svg className="w-7 h-7 text-slate-400" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" /></svg>
@@ -1786,12 +1892,13 @@ export default function App() {
                       <p className="text-[14px] font-medium text-slate-400 mt-1">Semua pengajuan telah ditindaklanjuti.</p>
                     </div>
                   ) : (
-                    filterByStatus(['pending_approval']).map((prog, i) => (
+                    filterByStatus(proposalQueueStatuses).map((prog, i) => (
                       <div key={prog.id} className={`${clay.cardSmall} p-5 md:p-8 flex flex-col md:flex-row gap-6 md:gap-8 animate-fade-in-up stagger-${(i%4)+1}`}>
                         <div className="flex-1">
                           <div className="flex items-center gap-3 mb-4 flex-wrap">
                              <ClayBadge color="gray">{prog.proposer}</ClayBadge>
                              <ClayBadge color="indigo">{prog.programType || 'Bulanan'}</ClayBadge>
+                             {prog.status === 'rejected' && <ClayBadge color="yellow">Perlu Revisi</ClayBadge>}
                              <span className="text-[13px] font-bold text-slate-500 flex items-center gap-1.5">
                                <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" /></svg>
                                {getProgramDateLabel(prog)}
@@ -1801,6 +1908,13 @@ export default function App() {
                           <h4 className="font-extrabold text-slate-800 text-[16px] md:text-[18px] mb-3">{prog.title}</h4>
                           <p className="text-[14px] font-medium text-slate-500 leading-relaxed max-w-3xl">{prog.description}</p>
                           
+                          {prog.status === 'rejected' && getRejectionReason(prog) && (
+                            <div className="mt-4 p-4 bg-red-50 border border-red-200 rounded-[18px] text-red-700 shadow-inner">
+                              <p className="text-[11px] font-extrabold uppercase tracking-widest mb-1">Alasan Penolakan Kepala Sekolah</p>
+                              <p className="text-[13px] font-bold leading-relaxed whitespace-pre-line">{getRejectionReason(prog)}</p>
+                            </div>
+                          )}
+
                           {prog.budget > 0 && (
                             <div className="mt-5 inline-flex items-center gap-2 px-4 py-2 rounded-[16px] bg-slate-100/60 border border-slate-200/50 text-slate-700 text-[13px] font-bold shadow-inner">
                               <svg className="w-4 h-4 text-emerald-600" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
@@ -1829,6 +1943,10 @@ export default function App() {
                                 <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M5 13l4 4L19 7" /></svg>
                                 Setujui (ACC)
                               </button>
+                              <button onClick={() => requestRejectProposal(prog.id)} className={clay.btnDanger}>
+                                <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M6 18L18 6M6 6l12 12" /></svg>
+                                Tolak dengan Alasan
+                              </button>
                               <button onClick={() => handleDeleteProgram(prog.id)} className="w-full text-[11px] font-bold text-red-500 py-3 border border-red-200 bg-red-50 rounded-[16px] hover:bg-red-100 transition-all shadow-sm mt-1">
                                 Hapus Permintaan
                               </button>
@@ -1836,7 +1954,7 @@ export default function App() {
                           ) : (
                             <div className="flex flex-col gap-2 w-full">
                               <div className="text-center bg-slate-100/60 border border-slate-200/50 rounded-[16px] p-4 shadow-inner">
-                                <p className="text-[12px] font-extrabold text-slate-500">Menunggu ACC Kepala Sekolah</p>
+                                <p className={`text-[12px] font-extrabold ${prog.status === 'rejected' ? 'text-red-600' : 'text-slate-500'}`}>{prog.status === 'rejected' ? 'Pengajuan ditolak, silakan edit dan ajukan ulang' : 'Menunggu ACC Kepala Sekolah'}</p>
                               </div>
                               {currentRole === prog.proposer && (
                                 <>
