@@ -759,8 +759,27 @@ export default function App() {
 
   // 2. View Laporan Print Out (Tampil Jika Tombol Ekspor Ditekan)
   if (isPrintMode) {
-    const completedPrograms = filterByStatus(['completed']);
-    const pendingPrograms = programs.filter(p => p.status !== 'completed' && (selectedFilterDivisi === 'Semua' || p.proposer === selectedFilterDivisi));
+    let completedPrograms = filterByStatus(['completed']);
+    let pendingPrograms = programs.filter(p => p.status !== 'completed' && (selectedFilterDivisi === 'Semua' || p.proposer === selectedFilterDivisi));
+
+    // === SMART SORTING UNTUK EKSPOR PDF ===
+    completedPrograms = [...completedPrograms].sort((a, b) => {
+      const da = a.report?.reportDate || '9999-99-99';
+      const db = b.report?.reportDate || '9999-99-99';
+      return da.localeCompare(db);
+    });
+
+    const getSortKey = (prog) => {
+      const d = prog.proposedDate || '';
+      if (/^\d{4}-\d{2}-\d{2}$/.test(d)) {
+        return d;
+      }
+      return 'ZZZ-' + d;
+    };
+
+    pendingPrograms = [...pendingPrograms].sort((a, b) => {
+      return getSortKey(a).localeCompare(getSortKey(b));
+    });
 
     return (
       <div className="bg-slate-200 min-h-screen pb-10 w-full overflow-y-auto print:bg-white print:p-0">
