@@ -151,8 +151,11 @@ export default function App() {
   const [newProgramType, setNewProgramType] = useState('Bulanan');
   const [newWeeklySchedule, setNewWeeklySchedule] = useState('Seminggu Sekali');
   const [newDate, setNewDate] = useState('');
+  const [newEndDate, setNewEndDate] = useState('');
   const [newDescription, setNewDescription] = useState('');
   const [newBudget, setNewBudget] = useState('');
+  const [editingProgramId, setEditingProgramId] = useState(null);
+  const [budgetDrafts, setBudgetDrafts] = useState({});
   const [reportingProgramId, setReportingProgramId] = useState(null);
   const [reportDesc, setReportDesc] = useState('');
   const [reportDate, setReportDate] = useState('');
@@ -425,37 +428,245 @@ export default function App() {
   const getProgramRef = (id) => doc(db, 'artifacts', appId, 'public', 'data', 'programs', id);
   const getUserRef = (id) => doc(db, 'artifacts', appId, 'public', 'data', 'users', id);
 
+  const isISODate = (value) => typeof value === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(value);
+
+  const getDateFromProgramId = (id) => {
+    const match = String(id || '').match(/^prog(?:-import)?-(\d{13})/);
+    if (!match) return '';
+    const parsedDate = new Date(Number(match[1]));
+    if (Number.isNaN(parsedDate.getTime())) return '';
+    return parsedDate.toISOString().slice(0, 10);
+  };
+
+  const formatDisplayDate = (value) => {
+    if (!value) return '';
+    if (!isISODate(value)) return value;
+    return new Date(`${value}T00:00:00`).toLocaleDateString('id-ID', {
+      day: 'numeric', month: 'long', year: 'numeric'
+    });
+  };
+
+  const formatDateRange = (startDate, endDate) => {
+    if (startDate && endDate && startDate !== endDate) {
+      return `${formatDisplayDate(startDate)} s.d. ${formatDisplayDate(endDate)}`;
+    }
+    if (startDate) return formatDisplayDate(startDate);
+    if (endDate) return formatDisplayDate(endDate);
+    return '';
+  };
+
+  const getProgramStartDate = (prog) => {
+    if (!prog) return '';
+    if (isISODate(prog.proposedStartDate)) return prog.proposedStartDate;
+    if (isISODate(prog.proposedDate)) return prog.proposedDate;
+    return '';
+  };
+
+  const getProgramEndDate = (prog) => {
+    if (!prog) return '';
+    if (isISODate(prog.proposedEndDate)) return prog.proposedEndDate;
+    return getProgramStartDate(prog);
+  };
+
+  const getProgramDateLabel = (prog) => {
+    if (!prog) return '-';
+    if (prog.programType === 'Harian') return 'Setiap Hari';
+    if (prog.programType === 'Mingguan' && !getProgramStartDate(prog)) {
+      return prog.proposedDate || prog.weeklySchedule || 'Jadwal Mingguan';
+    }
+    const rangeLabel = formatDateRange(getProgramStartDate(prog), getProgramEndDate(prog));
+    return rangeLabel || prog.proposedDate || '-';
+  };
+
+  const getSubmittedDate = (prog) => {
+    const rawDate = prog?.submittedAt || prog?.createdAt || '';
+    const dateOnly = typeof rawDate === 'string' ? rawDate.slice(0, 10) : '';
+    if (isISODate(dateOnly)) return dateOnly;
+    return getDateFromProgramId(prog?.id);
+  };
+
+  const getSubmittedDateLabel = (prog) => formatDisplayDate(getSubmittedDate(prog)) || '-';
+
+  const getProgramSortKey = (prog) => {
+    if (isISODate(prog?.report?.reportDate)) return prog.report.reportDate;
+    const plannedDate = getProgramStartDate(prog);
+    if (isISODate(plannedDate)) return plannedDate;
+    const submittedDate = getSubmittedDate(prog);
+    if (isISODate(submittedDate)) return submittedDate;
+    return `ZZZ-${prog?.proposedDate || prog?.title || ''}`;
+  };
+
+  const sortProgramsByDate = (list) => [...list].sort((a, b) => {
+    const dateCompare = getProgramSortKey(a).localeCompare(getProgramSortKey(b));
+    if (dateCompare !== 0) return dateCompare;
+    return (a.title || '').localeCompare(b.title || '');
+  });
+
+  const resetProgramForm = () => {
+    setEditingProgramId(null);
+    setNewTitle('');
+    setNewDate('');
+    setNewEndDate('');
+    setNewDescription('');
+    setNewBudget('');
+    setNewProgramType('Bulanan');
+    setNewWeeklySchedule('Seminggu Sekali');
+  };
+
+  const buildProgramDateFields = () => {
+    if (newProgramType === 'Harian') {
+      return { proposedDate: 'Setiap Hari', proposedStartDate: '', proposedEndDate: '' };
+    }
+    if (newProgramType === 'Mingguan') {
+      return { proposedDate: newWeeklySchedule, proposedStartDate: '', proposedEndDate: '' };
+    }
+
+    const startDate = newDate;
+    const endDate = newEndDate || newDate;
+    return {
+      proposedDate: startDate === endDate ? startDate : `${startDate} s.d. ${endDate}`,
+      proposedStartDate: startDate,
+      proposedEndDate: endDate
+    };
+  };
+
   // --- CRUD FUNCTIONS ---
   const handleCreateProgram = (e) => {
     e.preventDefault();
-    
-    let finalDate = newDate;
-    if (newProgramType === 'Harian') finalDate = 'Setiap Hari';
-    if (newProgramType === 'Mingguan') finalDate = newWeeklySchedule;
 
-    if (!newTitle || !finalDate || !newDescription) {
+    const dateFields = buildProgramDateFields();
+
+    if ((newProgramType === 'Bulanan' || newProgramType === 'Tahunan') && !dateFields.proposedStartDate) {
+      showNotification('Mohon isi tanggal mulai pelaksanaan.', 'error'); return;
+    }
+
+    if (dateFields.proposedStartDate && dateFields.proposedEndDate && dateFields.proposedEndDate < dateFields.proposedStartDate) {
+      showNotification('Tanggal selesai tidak boleh lebih awal dari tanggal mulai.', 'error'); return;
+    }
+
+    if (!newTitle || !dateFields.proposedDate || !newDescription) {
       showNotification('Mohon lengkapi seluruh field pengajuan!', 'error'); return;
     }
+
+    const payload = {
+      title: newTitle,
+      proposer: currentRole,
+      ...dateFields,
+      programType: newProgramType,
+      description: newDescription,
+      budget: Number(newBudget) || 0,
+      updatedAt: new Date().toISOString()
+    };
+
+    if (editingProgramId) {
+      const progToEdit = programs.find(p => p.id === editingProgramId);
+      if (!progToEdit) {
+        showNotification('Data pengajuan tidak ditemukan.', 'error'); return;
+      }
+      if (progToEdit.status !== 'pending_approval') {
+        showNotification('Pengajuan yang sudah di-ACC tidak dapat diedit lagi.', 'error'); return;
+      }
+
+      setDoc(getProgramRef(editingProgramId), { ...progToEdit, ...payload })
+        .then(() => {
+          showNotification('Pengajuan berhasil diperbarui.');
+          resetProgramForm();
+          setActiveTab('antrean_pengajuan');
+        })
+        .catch(err => showNotification('Gagal memperbarui pengajuan.', 'error'));
+      return;
+    }
+
     const newProgramId = `prog-${Date.now()}`;
     const newProgram = {
-      id: newProgramId, title: newTitle, proposer: currentRole, proposedDate: finalDate, programType: newProgramType,
-      description: newDescription, budget: Number(newBudget) || 0, status: 'pending_approval',
-      approvals: { kepsek: false }, report: null
+      id: newProgramId,
+      ...payload,
+      createdAt: new Date().toISOString(),
+      submittedAt: new Date().toISOString(),
+      status: 'pending_approval',
+      approvals: { kepsek: false },
+      report: null
     };
     
     setDoc(getProgramRef(newProgramId), newProgram)
       .then(() => {
         showNotification('Pengajuan berhasil ditambahkan ke database.');
-        setNewTitle(''); setNewDate(''); setNewDescription(''); setNewBudget(''); setNewProgramType('Bulanan'); setNewWeeklySchedule('Seminggu Sekali');
+        resetProgramForm();
         setActiveTab('antrean_pengajuan');
       })
       .catch(err => showNotification('Gagal mengirim pengajuan.', 'error'));
   };
 
+  const handleEditProgramClick = (prog) => {
+    if (prog.status !== 'pending_approval') {
+      showNotification('Pengajuan yang sudah di-ACC tidak dapat diedit lagi.', 'error');
+      return;
+    }
+    if (currentRole !== prog.proposer && currentRole !== 'Kepala Sekolah') {
+      showNotification('Anda tidak memiliki akses untuk mengedit pengajuan ini.', 'error');
+      return;
+    }
+
+    setEditingProgramId(prog.id);
+    setNewTitle(prog.title || '');
+    setNewProgramType(prog.programType || 'Bulanan');
+    setNewWeeklySchedule(prog.programType === 'Mingguan' ? (prog.proposedDate || prog.weeklySchedule || 'Seminggu Sekali') : 'Seminggu Sekali');
+    setNewDate(getProgramStartDate(prog));
+    const endDate = getProgramEndDate(prog);
+    setNewEndDate(endDate && endDate !== getProgramStartDate(prog) ? endDate : '');
+    setNewDescription(prog.description || '');
+    setNewBudget(String(prog.budget || ''));
+    setViewingReportId(null);
+    setReportingProgramId(null);
+    setActiveTab('buat_pengajuan');
+  };
+
+  const handleBudgetDraftChange = (id, value) => {
+    setBudgetDrafts(prev => ({ ...prev, [id]: value }));
+  };
+
+  const handleUpdateProposalBudget = (id) => {
+    const progToUpdate = programs.find(p => p.id === id);
+    if (!progToUpdate) {
+      showNotification('Data pengajuan tidak ditemukan.', 'error'); return;
+    }
+    if (progToUpdate.status !== 'pending_approval') {
+      showNotification('Nominal hanya bisa diubah sebelum pengajuan di-ACC.', 'error'); return;
+    }
+
+    const nextBudget = Number(budgetDrafts[id] ?? progToUpdate.budget ?? 0);
+    if (Number.isNaN(nextBudget) || nextBudget < 0) {
+      showNotification('Nominal anggaran tidak valid.', 'error'); return;
+    }
+
+    setDoc(getProgramRef(id), {
+      ...progToUpdate,
+      budget: nextBudget,
+      budgetAdjustedBy: currentRole,
+      budgetAdjustedAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString()
+    })
+      .then(() => showNotification('Nominal pengajuan berhasil diperbarui.'))
+      .catch(err => showNotification('Gagal memperbarui nominal pengajuan.', 'error'));
+  };
+
+
   const handleApproveProposal = (id) => {
     const progToApprove = programs.find(p => p.id === id);
     if (progToApprove) {
-      setDoc(getProgramRef(id), { ...progToApprove, approvals: { kepsek: true }, status: 'approved_pelaksanaan' })
+      const draftedBudget = budgetDrafts[id];
+      const approvedBudget = draftedBudget !== undefined && draftedBudget !== ''
+        ? Number(draftedBudget) || 0
+        : progToApprove.budget || 0;
+
+      setDoc(getProgramRef(id), {
+        ...progToApprove,
+        budget: approvedBudget,
+        approvals: { kepsek: true },
+        status: 'approved_pelaksanaan',
+        approvedAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString()
+      })
         .then(() => showNotification('Proposal berhasil disetujui.'))
         .catch(err => showNotification('Gagal menyetujui proposal.', 'error'));
     }
@@ -651,7 +862,7 @@ export default function App() {
     else if (['Kepala Sekolah', 'Yayasan'].includes(currentRole) && selectedFilterDivisi !== 'Semua') {
       filtered = filtered.filter(prog => prog.proposer === selectedFilterDivisi);
     }
-    return filtered;
+    return sortProgramsByDate(filtered);
   };
 
   const isProposerRole = ['Kesiswaan', 'Kurikulum', 'Hubin', 'Kaprog TKJ', 'Kaprog TKR', 'Kaprog MP'].includes(currentRole);
@@ -675,14 +886,39 @@ export default function App() {
         
         if (columns.length >= 3 && columns[0]) {
           const newId = `prog-import-${Date.now()}-${index}`;
+          const programType = columns[1] || 'Bulanan';
+          const usesNewTemplate = columns.length >= 6;
+          const startColumn = columns[2] || '';
+          const endColumn = usesNewTemplate ? (columns[3] || startColumn) : startColumn;
+          const budgetColumn = usesNewTemplate ? columns[4] : columns[3];
+          const descriptionColumn = usesNewTemplate ? columns[5] : columns[4];
+
+          let importedDateFields = {
+            proposedDate: startColumn,
+            proposedStartDate: isISODate(startColumn) ? startColumn : '',
+            proposedEndDate: isISODate(endColumn) ? endColumn : (isISODate(startColumn) ? startColumn : '')
+          };
+
+          if (programType === 'Harian') {
+            importedDateFields = { proposedDate: 'Setiap Hari', proposedStartDate: '', proposedEndDate: '' };
+          } else if (programType === 'Mingguan') {
+            importedDateFields = { proposedDate: startColumn || 'Seminggu Sekali', proposedStartDate: '', proposedEndDate: '' };
+          } else if (importedDateFields.proposedStartDate) {
+            importedDateFields.proposedDate = importedDateFields.proposedStartDate === importedDateFields.proposedEndDate
+              ? importedDateFields.proposedStartDate
+              : `${importedDateFields.proposedStartDate} s.d. ${importedDateFields.proposedEndDate}`;
+          }
+
           const importedProg = {
             id: newId,
             title: columns[0] || '', 
-            programType: columns[1] || 'Bulanan',
-            proposedDate: columns[2] || '', 
-            budget: Number(columns[3]) || 0,
-            description: columns[4] || '', 
-            proposer: currentRole, 
+            programType,
+            ...importedDateFields,
+            budget: Number(budgetColumn) || 0,
+            description: descriptionColumn || '', 
+            proposer: currentRole,
+            createdAt: new Date().toISOString(),
+            submittedAt: new Date().toISOString(),
             status: 'pending_approval', 
             approvals: { kepsek: false }, 
             report: null
@@ -704,10 +940,10 @@ export default function App() {
   };
 
   const downloadTemplate = () => {
-    const headers = "Nama Program;Jenis Program (Harian/Mingguan/Bulanan/Tahunan);Rencana Pelaksanaan (Tanggal / Jadwal);Estimasi Anggaran (Rp);Deskripsi Singkat\n";
-    const sample1 = "Pentas Seni Terpadu;Tahunan;2026-10-20;15000000;Kegiatan pentas seni akhir tahun ajaran\n";
-    const sample2 = "Pemeriksaan Kedisiplinan;Mingguan;Seminggu Sekali;0;Pemeriksaan atribut dan rambut siswa\n";
-    const sample3 = "Piket Menyambut Siswa;Harian;Setiap Hari;0;Guru dan Osis menyambut di gerbang\n";
+    const headers = "Nama Program;Jenis Program (Harian/Mingguan/Bulanan/Tahunan);Tanggal Mulai / Jadwal;Tanggal Selesai;Estimasi Anggaran (Rp);Deskripsi Singkat\n";
+    const sample1 = "Pentas Seni Terpadu;Tahunan;2026-10-20;2026-10-24;15000000;Kegiatan pentas seni akhir tahun ajaran selama lima hari\n";
+    const sample2 = "Pemeriksaan Kedisiplinan;Mingguan;Seminggu Sekali;;0;Pemeriksaan atribut dan rambut siswa\n";
+    const sample3 = "Piket Menyambut Siswa;Harian;Setiap Hari;;0;Guru dan Osis menyambut di gerbang\n";
     
     // Menambahkan BOM agar file dapat dibuka dengan rapi langsung dari Microsoft Excel sebagai kolom-kolom terpisah
     const bom = "\uFEFF";
@@ -721,6 +957,9 @@ export default function App() {
   };
 
   const handleTabChange = (tabId) => {
+    if (tabId !== 'buat_pengajuan' && editingProgramId) {
+      resetProgramForm();
+    }
     setActiveTab(tabId);
     setViewingReportId(null);
     setReportingProgramId(null);
@@ -759,27 +998,8 @@ export default function App() {
 
   // 2. View Laporan Print Out (Tampil Jika Tombol Ekspor Ditekan)
   if (isPrintMode) {
-    let completedPrograms = filterByStatus(['completed']);
-    let pendingPrograms = programs.filter(p => p.status !== 'completed' && (selectedFilterDivisi === 'Semua' || p.proposer === selectedFilterDivisi));
-
-    // === SMART SORTING UNTUK EKSPOR PDF ===
-    completedPrograms = [...completedPrograms].sort((a, b) => {
-      const da = a.report?.reportDate || '9999-99-99';
-      const db = b.report?.reportDate || '9999-99-99';
-      return da.localeCompare(db);
-    });
-
-    const getSortKey = (prog) => {
-      const d = prog.proposedDate || '';
-      if (/^\d{4}-\d{2}-\d{2}$/.test(d)) {
-        return d;
-      }
-      return 'ZZZ-' + d;
-    };
-
-    pendingPrograms = [...pendingPrograms].sort((a, b) => {
-      return getSortKey(a).localeCompare(getSortKey(b));
-    });
+    let completedPrograms = sortProgramsByDate(filterByStatus(['completed']));
+    let pendingPrograms = sortProgramsByDate(programs.filter(p => p.status !== 'completed' && (selectedFilterDivisi === 'Semua' || p.proposer === selectedFilterDivisi)));
 
     return (
       <div className="bg-slate-200 min-h-screen pb-10 w-full overflow-y-auto print:bg-white print:p-0">
@@ -850,7 +1070,10 @@ export default function App() {
                            <tbody>
                              <tr><td className="w-28 font-semibold py-1 align-top">Divisi Pengusul</td><td className="w-4 align-top">:</td><td className="py-1 align-top">{prog.proposer}</td></tr>
                              <tr><td className="font-semibold py-1 align-top">Jenis Program</td><td className="align-top">:</td><td className="py-1 align-top">{prog.programType || 'Bulanan'}</td></tr>
-                             <tr><td className="font-semibold py-1 align-top">Waktu Laporan</td><td className="align-top">:</td><td className="py-1 align-top">{prog.report?.reportDate}</td></tr>
+                             <tr><td className="font-semibold py-1 align-top">Tanggal Pengajuan</td><td className="align-top">:</td><td className="py-1 align-top">{getSubmittedDateLabel(prog)}</td></tr>
+                             <tr><td className="font-semibold py-1 align-top">Rencana Pelaksanaan</td><td className="align-top">:</td><td className="py-1 align-top">{getProgramDateLabel(prog)}</td></tr>
+                             <tr><td className="font-semibold py-1 align-top">Anggaran</td><td className="align-top">:</td><td className="py-1 align-top">Rp {(prog.budget || 0).toLocaleString('id-ID')}</td></tr>
+                             <tr><td className="font-semibold py-1 align-top">Waktu Laporan</td><td className="align-top">:</td><td className="py-1 align-top">{formatDisplayDate(prog.report?.reportDate) || '-'}</td></tr>
                            </tbody>
                          </table>
                          <div className="text-[13px] bg-slate-50 p-3 border border-slate-200 rounded">
@@ -883,8 +1106,11 @@ export default function App() {
                     <tr>
                       <th className="border border-slate-400 p-2.5 w-10 text-center">No</th>
                       <th className="border border-slate-400 p-2.5 text-left">Nama Program</th>
-                      <th className="border border-slate-400 p-2.5 text-left w-28">Divisi</th>
-                      <th className="border border-slate-400 p-2.5 text-left w-24">Jenis</th>
+                      <th className="border border-slate-400 p-2.5 text-left w-24">Divisi</th>
+                      <th className="border border-slate-400 p-2.5 text-left w-20">Jenis</th>
+                      <th className="border border-slate-400 p-2.5 text-left w-28">Tanggal Pengajuan</th>
+                      <th className="border border-slate-400 p-2.5 text-left w-36">Rencana Pelaksanaan</th>
+                      <th className="border border-slate-400 p-2.5 text-left w-28">Anggaran</th>
                       <th className="border border-slate-400 p-2.5 text-left w-32">Status Terkini</th>
                     </tr>
                   </thead>
@@ -895,6 +1121,9 @@ export default function App() {
                         <td className="border border-slate-400 p-2.5 font-bold">{prog.title}</td>
                         <td className="border border-slate-400 p-2.5">{prog.proposer}</td>
                         <td className="border border-slate-400 p-2.5">{prog.programType || '-'}</td>
+                        <td className="border border-slate-400 p-2.5">{getSubmittedDateLabel(prog)}</td>
+                        <td className="border border-slate-400 p-2.5">{getProgramDateLabel(prog)}</td>
+                        <td className="border border-slate-400 p-2.5">Rp {(prog.budget || 0).toLocaleString('id-ID')}</td>
                         <td className="border border-slate-400 p-2.5 font-medium italic">
                           {prog.status === 'pending_approval' ? 'Menunggu Izin Kepsek' : prog.status === 'approved_pelaksanaan' ? 'Masa Pelaksanaan' : 'Menunggu Review Kepsek'}
                         </td>
@@ -1438,8 +1667,8 @@ export default function App() {
               <div className="max-w-3xl mx-auto space-y-6">
                 <div className={`${clay.card} p-6 md:p-10 animate-fade-in-up stagger-1`}>
                   <div className="mb-8">
-                    <h3 className="text-[20px] font-extrabold text-slate-800 tracking-tight">Formulir Pengajuan Baru</h3>
-                    <p className="text-[14px] font-medium text-slate-500 mt-1">Isi rincian dengan lengkap untuk mengajukan program kerja.</p>
+                    <h3 className="text-[20px] font-extrabold text-slate-800 tracking-tight">{editingProgramId ? 'Edit Pengajuan Program' : 'Formulir Pengajuan Baru'}</h3>
+                    <p className="text-[14px] font-medium text-slate-500 mt-1">{editingProgramId ? 'Perubahan masih bisa dilakukan selama pengajuan belum di-ACC.' : 'Isi rincian dengan lengkap untuk mengajukan program kerja.'}</p>
                   </div>
                   
                   <form onSubmit={handleCreateProgram} className="space-y-6">
@@ -1485,9 +1714,16 @@ export default function App() {
                         </div>
                       )}
                       {(newProgramType === 'Bulanan' || newProgramType === 'Tahunan') && (
-                        <div>
-                          <label className="block text-[13px] font-bold text-slate-600 mb-2">Rencana Pelaksanaan (Tanggal)</label>
-                          <input type="date" value={newDate} onChange={(e) => setNewDate(e.target.value)} required className={clay.input} />
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                          <div>
+                            <label className="block text-[13px] font-bold text-slate-600 mb-2">Tanggal Mulai Pelaksanaan</label>
+                            <input type="date" value={newDate} onChange={(e) => setNewDate(e.target.value)} required className={clay.input} />
+                          </div>
+                          <div>
+                            <label className="block text-[13px] font-bold text-slate-600 mb-2">Tanggal Selesai <span className="font-medium text-slate-400">(opsional)</span></label>
+                            <input type="date" value={newEndDate} min={newDate || undefined} onChange={(e) => setNewEndDate(e.target.value)} className={clay.input} />
+                            <p className="text-[11px] font-medium text-slate-400 mt-2">Kosongkan jika kegiatan hanya berlangsung 1 hari.</p>
+                          </div>
                         </div>
                       )}
                     </div>
@@ -1497,9 +1733,14 @@ export default function App() {
                       <textarea rows="4" placeholder="Jelaskan tujuan kegiatan ini..." value={newDescription} onChange={(e) => setNewDescription(e.target.value)} required className={`${clay.input} resize-none`}></textarea>
                     </div>
 
-                    <div className="pt-4">
+                    <div className="pt-4 flex flex-col sm:flex-row gap-3">
+                      {editingProgramId && (
+                        <button type="button" onClick={resetProgramForm} className={`${clay.btnSecondary} w-full sm:w-auto`}>
+                          Batal Edit
+                        </button>
+                      )}
                       <button type="submit" className={`w-full ${clay.btnPrimary}`}>
-                        Kirim Pengajuan
+                        {editingProgramId ? 'Simpan Perubahan Pengajuan' : 'Kirim Pengajuan'}
                       </button>
                     </div>
                   </form>
@@ -1553,8 +1794,9 @@ export default function App() {
                              <ClayBadge color="indigo">{prog.programType || 'Bulanan'}</ClayBadge>
                              <span className="text-[13px] font-bold text-slate-500 flex items-center gap-1.5">
                                <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" /></svg>
-                               {prog.proposedDate}
+                               {getProgramDateLabel(prog)}
                              </span>
+                             <span className="text-[12px] font-bold text-slate-400">Diajukan: {getSubmittedDateLabel(prog)}</span>
                           </div>
                           <h4 className="font-extrabold text-slate-800 text-[16px] md:text-[18px] mb-3">{prog.title}</h4>
                           <p className="text-[14px] font-medium text-slate-500 leading-relaxed max-w-3xl">{prog.description}</p>
@@ -1570,6 +1812,19 @@ export default function App() {
                         <div className="md:w-56 shrink-0 flex flex-col justify-center gap-4 border-t md:border-t-0 md:border-l border-slate-200/50 pt-6 md:pt-0 md:pl-8">
                           {currentRole === 'Kepala Sekolah' ? (
                             <div className="flex flex-col gap-2 w-full">
+                              <div className="bg-slate-100/60 border border-slate-200/60 rounded-[16px] p-3 shadow-inner mb-1">
+                                <label className="block text-[10px] font-extrabold text-slate-400 uppercase tracking-widest mb-2">Ubah Nominal Sebelum ACC</label>
+                                <input
+                                  type="number"
+                                  min="0"
+                                  value={budgetDrafts[prog.id] ?? prog.budget ?? ''}
+                                  onChange={(e) => handleBudgetDraftChange(prog.id, e.target.value)}
+                                  className="w-full px-3 py-2 bg-white border border-slate-200 rounded-[12px] text-[13px] font-bold text-slate-700 outline-none"
+                                />
+                                <button onClick={() => handleUpdateProposalBudget(prog.id)} className="w-full mt-2 text-[11px] font-bold text-indigo-600 py-2 border border-indigo-100 bg-indigo-50 rounded-[12px] hover:bg-indigo-100 transition-all">
+                                  Simpan Nominal
+                                </button>
+                              </div>
                               <button onClick={() => handleApproveProposal(prog.id)} className={clay.btnSuccess}>
                                 <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M5 13l4 4L19 7" /></svg>
                                 Setujui (ACC)
@@ -1584,9 +1839,14 @@ export default function App() {
                                 <p className="text-[12px] font-extrabold text-slate-500">Menunggu ACC Kepala Sekolah</p>
                               </div>
                               {currentRole === prog.proposer && (
-                                <button onClick={() => handleDeleteProgram(prog.id)} className="w-full text-[11px] font-bold text-red-500 py-3 border border-red-200 bg-red-50 rounded-[16px] hover:bg-red-100 transition-all shadow-sm mt-1">
-                                  Batalkan / Hapus
-                                </button>
+                                <>
+                                  <button onClick={() => handleEditProgramClick(prog)} className="w-full text-[11px] font-bold text-indigo-600 py-3 border border-indigo-200 bg-indigo-50 rounded-[16px] hover:bg-indigo-100 transition-all shadow-sm mt-1">
+                                    Edit Pengajuan
+                                  </button>
+                                  <button onClick={() => handleDeleteProgram(prog.id)} className="w-full text-[11px] font-bold text-red-500 py-3 border border-red-200 bg-red-50 rounded-[16px] hover:bg-red-100 transition-all shadow-sm mt-1">
+                                    Batalkan / Hapus
+                                  </button>
+                                </>
                               )}
                             </div>
                           )}
@@ -1698,7 +1958,7 @@ export default function App() {
                                  <p className="text-[12px] font-extrabold text-slate-400 uppercase tracking-widest mb-3 pl-2">Waktu Pelaksanaan</p>
                                  <div className="inline-flex items-center text-[14px] md:text-[15px] font-bold text-slate-700 bg-slate-100/60 px-5 py-3.5 rounded-[18px] border border-slate-200/50 shadow-inner">
                                    <svg className="w-5 h-5 mr-2 text-indigo-500" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" /></svg>
-                                   {prog.report.reportDate}
+                                   {formatDisplayDate(prog.report.reportDate) || '-'}
                                  </div>
                                </div>
                                <div>
@@ -1754,10 +2014,11 @@ export default function App() {
                                  {prog.status === 'reported' ? <ClayBadge color="indigo">Menunggu Review</ClayBadge> : <ClayBadge color="gray">Masa Eksekusi</ClayBadge>}
                                </div>
                                <h4 className="font-extrabold text-slate-800 text-[15px] md:text-[16px]">{prog.title}</h4>
+                               <p className="text-[12px] font-bold text-slate-400 mt-2">Rencana: {getProgramDateLabel(prog)}</p>
                             </div>
                             <div className="shrink-0 w-full lg:w-auto flex flex-col gap-2">
                                {prog.status === 'approved_pelaksanaan' && currentRole === prog.proposer && (
-                                  <button onClick={() => { setReportingProgramId(prog.id); setReportDate(prog.proposedDate); }} className={`${clay.btnPrimary} w-full lg:w-auto`}>
+                                  <button onClick={() => { setReportingProgramId(prog.id); setReportDate(getProgramStartDate(prog) || ''); }} className={`${clay.btnPrimary} w-full lg:w-auto`}>
                                     Buat Laporan Selesai
                                   </button>
                                )}
@@ -1814,7 +2075,7 @@ export default function App() {
                              <div className="flex items-center gap-3 mb-3 flex-wrap">
                                <ClayBadge color="gray">{prog.proposer}</ClayBadge>
                                <ClayBadge color="indigo">{prog.programType || 'Bulanan'}</ClayBadge>
-                               <span className="text-[11px] md:text-[12px] font-bold text-slate-400">Tgl: {prog.report?.reportDate}</span>
+                               <span className="text-[11px] md:text-[12px] font-bold text-slate-400">Tgl: {formatDisplayDate(prog.report?.reportDate) || '-'}</span>
                              </div>
                              <h4 className="font-extrabold text-slate-800 text-[15px] md:text-[16px] mb-2">{prog.title}</h4>
                              <p className="text-[12px] md:text-[13px] font-medium text-slate-400 line-clamp-2 leading-relaxed">{prog.report?.description}</p>
