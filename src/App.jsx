@@ -30,11 +30,16 @@ const INITIAL_USERS = [
   { id: 'usr-5', username: 'kaprog_tkr', password: 'password', name: 'Kaprog TKR', role: 'Kaprog TKR', status: 'Aktif' },
   { id: 'usr-6', username: 'kaprog_mp', password: 'password', name: 'Kaprog MP', role: 'Kaprog MP', status: 'Aktif' },
   { id: 'usr-7', username: 'kepsek', password: 'admin', name: 'Kepala Sekolah', role: 'Kepala Sekolah', status: 'Aktif' },
-  { id: 'usr-8', username: 'yayasan', password: 'password', name: 'Yayasan', role: 'Yayasan', status: 'Aktif' }
+  { id: 'usr-8', username: 'yayasan', password: 'password', name: 'Yayasan', role: 'Yayasan', status: 'Aktif' },
+  { id: 'usr-9', username: 'tatausaha', password: 'password', name: 'Tata Usaha', role: 'Tata Usaha', status: 'Aktif' }
 ];
 
 // Data awal program (Dikosongkan untuk rilis produksi)
 const INITIAL_PROGRAMS = [];
+
+// Role operasional yang memiliki laman pengajuan program kerja masing-masing
+const PROPOSER_ROLES = ['Kesiswaan', 'Kurikulum', 'Hubin', 'Tata Usaha', 'Kaprog TKJ', 'Kaprog TKR', 'Kaprog MP'];
+const MANAGEMENT_ROLES = ['Kepala Sekolah', 'Yayasan'];
 
 // --- DYNAMIC ROLE THEMES ---
 const ROLE_THEMES = {
@@ -91,6 +96,15 @@ const ROLE_THEMES = {
     ring: 'shadow-[0_0_12px_rgba(236,72,153,0.4)]',
     pulse: 'bg-pink-500',
     focus: 'focus:border-pink-500/50'
+  },
+  'Tata Usaha': {
+    mesh: ['bg-violet-300/30', 'bg-purple-200/30', 'bg-sky-100/40', 'bg-slate-100/40'],
+    primary: 'from-violet-500 to-sky-500',
+    accent: 'bg-violet-50 text-violet-700',
+    icon: 'text-violet-600',
+    ring: 'shadow-[0_0_12px_rgba(139,92,246,0.4)]',
+    pulse: 'bg-violet-500',
+    focus: 'focus:border-violet-500/50'
   },
   'Kepala Sekolah': {
     mesh: ['bg-amber-300/40', 'bg-yellow-200/50', 'bg-orange-100/50', 'bg-red-100/40'],
@@ -263,14 +277,16 @@ export default function App() {
     });
 
     const unsubscribeUsers = onSnapshot(usersRef, (snapshot) => {
-      if (snapshot.empty) {
-        INITIAL_USERS.forEach(user => {
+      const loadedUsers = snapshot.docs.map(doc => doc.data());
+      const existingUsernames = new Set(loadedUsers.map(user => String(user.username || '').toLowerCase().trim()));
+
+      INITIAL_USERS.forEach(user => {
+        if (!existingUsernames.has(user.username.toLowerCase().trim())) {
           setDoc(doc(usersRef, user.id), user).catch(err => console.error(err));
-        });
-      } else {
-        const loadedUsers = snapshot.docs.map(doc => doc.data());
-        setUsers(loadedUsers);
-      }
+        }
+      });
+
+      setUsers(loadedUsers);
     });
 
     const unsubscribeSettings = onSnapshot(settingsRef, (docSnap) => {
@@ -930,17 +946,17 @@ export default function App() {
 
   const filterByStatus = (statusList) => {
     let filtered = programs.filter(prog => statusList.includes(prog.status));
-    if (['Kesiswaan', 'Kurikulum', 'Hubin', 'Kaprog TKJ', 'Kaprog TKR', 'Kaprog MP'].includes(currentRole)) {
+    if (PROPOSER_ROLES.includes(currentRole)) {
       filtered = filtered.filter(prog => prog.proposer === currentRole);
     } 
-    else if (['Kepala Sekolah', 'Yayasan'].includes(currentRole) && selectedFilterDivisi !== 'Semua') {
+    else if (MANAGEMENT_ROLES.includes(currentRole) && selectedFilterDivisi !== 'Semua') {
       filtered = filtered.filter(prog => prog.proposer === selectedFilterDivisi);
     }
     return sortProgramsByDate(filtered);
   };
 
-  const isProposerRole = ['Kesiswaan', 'Kurikulum', 'Hubin', 'Kaprog TKJ', 'Kaprog TKR', 'Kaprog MP'].includes(currentRole);
-  const isManagement = ['Kepala Sekolah', 'Yayasan'].includes(currentRole);
+  const isProposerRole = PROPOSER_ROLES.includes(currentRole);
+  const isManagement = MANAGEMENT_ROLES.includes(currentRole);
 
   const handleImportCSV = (e) => {
     const file = e.target.files[0];
@@ -1098,6 +1114,7 @@ export default function App() {
                 <option value="Kesiswaan">Kesiswaan</option>
                 <option value="Kurikulum">Kurikulum</option>
                 <option value="Hubin">Hubin</option>
+                <option value="Tata Usaha">Tata Usaha</option>
                 <option value="Kaprog TKJ">Kaprog TKJ</option>
                 <option value="Kaprog TKR">Kaprog TKR</option>
                 <option value="Kaprog MP">Kaprog MP</option>
@@ -1277,6 +1294,7 @@ export default function App() {
                   { name: 'Kesiswaan', theme: ROLE_THEMES['Kesiswaan'], color: 'text-indigo-600', bg: 'bg-indigo-50 border-indigo-200' },
                   { name: 'Kurikulum', theme: ROLE_THEMES['Kurikulum'], color: 'text-emerald-600', bg: 'bg-emerald-50 border-emerald-200' },
                   { name: 'Hubin', theme: ROLE_THEMES['Hubin'], color: 'text-blue-600', bg: 'bg-blue-50 border-blue-200' },
+                  { name: 'Tata Usaha', theme: ROLE_THEMES['Tata Usaha'], color: 'text-violet-600', bg: 'bg-violet-50 border-violet-200' },
                   { name: 'Kaprog TKJ', theme: ROLE_THEMES['Kaprog TKJ'], color: 'text-cyan-600', bg: 'bg-cyan-50 border-cyan-200' },
                   { name: 'Kaprog TKR', theme: ROLE_THEMES['Kaprog TKR'], color: 'text-orange-600', bg: 'bg-orange-50 border-orange-200' },
                   { name: 'Kaprog MP', theme: ROLE_THEMES['Kaprog MP'], color: 'text-pink-600', bg: 'bg-pink-50 border-pink-200' },
@@ -1613,7 +1631,7 @@ export default function App() {
                   Filter Tinjauan Divisi:
                 </span>
                 <div className="flex items-center gap-2 overflow-x-auto pb-2 sm:pb-0 w-full scrollbar-hide">
-                  {['Semua', 'Kesiswaan', 'Kurikulum', 'Hubin', 'Kaprog TKJ', 'Kaprog TKR', 'Kaprog MP'].map(divisi => (
+                  {['Semua', ...PROPOSER_ROLES].map(divisi => (
                     <button
                       key={divisi}
                       onClick={() => setSelectedFilterDivisi(divisi)}
@@ -2318,6 +2336,7 @@ export default function App() {
                         <option value="Kesiswaan">Kesiswaan</option>
                         <option value="Kurikulum">Kurikulum</option>
                         <option value="Hubin">Hubin</option>
+                        <option value="Tata Usaha">Tata Usaha</option>
                         <option value="Kaprog TKJ">Kaprog TKJ</option>
                         <option value="Kaprog TKR">Kaprog TKR</option>
                         <option value="Kaprog MP">Kaprog MP</option>
@@ -2373,7 +2392,7 @@ export default function App() {
                         <div>
                           <div className="flex items-center gap-2 flex-wrap">
                             <span className="font-bold text-[14px] text-slate-800">{user.name}</span>
-                            <ClayBadge color={user.role.startsWith('Kaprog') ? 'blue' : user.role === 'Kepala Sekolah' ? 'yellow' : 'gray'}>
+                            <ClayBadge color={user.role.startsWith('Kaprog') ? 'blue' : user.role === 'Kepala Sekolah' ? 'yellow' : user.role === 'Tata Usaha' ? 'indigo' : 'gray'}>
                               {user.role}
                             </ClayBadge>
                           </div>
