@@ -1169,7 +1169,7 @@ export default function App() {
                          </table>
                          <div className="text-[13px] bg-slate-50 p-3 border border-slate-200 rounded">
                            <p className="font-bold mb-1 underline">Evaluasi Kegiatan:</p>
-                           <p className="whitespace-pre-line text-justify leading-relaxed">{prog.report?.description}</p>
+                           <p className="whitespace-pre-wrap break-words text-justify leading-relaxed">{prog.report?.description}</p>
                          </div>
                        </div>
                        
@@ -1854,7 +1854,7 @@ export default function App() {
 
                     <div>
                       <label className="block text-[13px] font-bold text-slate-600 mb-2">Deskripsi Singkat</label>
-                      <textarea rows="4" placeholder="Jelaskan tujuan kegiatan ini..." value={newDescription} onChange={(e) => setNewDescription(e.target.value)} required className={`${clay.input} resize-none`}></textarea>
+                      <textarea rows="5" placeholder="Jelaskan tujuan kegiatan ini..." value={newDescription} onChange={(e) => setNewDescription(e.target.value)} required className={`${clay.input} resize-y min-h-[140px] leading-relaxed`}></textarea>
                     </div>
 
                     <div className="pt-4 flex flex-col sm:flex-row gap-3">
@@ -1924,7 +1924,7 @@ export default function App() {
                              <span className="text-[12px] font-bold text-slate-400">Diajukan: {getSubmittedDateLabel(prog)}</span>
                           </div>
                           <h4 className="font-extrabold text-slate-800 text-[16px] md:text-[18px] mb-3">{prog.title}</h4>
-                          <p className="text-[14px] font-medium text-slate-500 leading-relaxed max-w-3xl">{prog.description}</p>
+                          <div className="text-[14px] font-medium text-slate-500 leading-relaxed max-w-3xl whitespace-pre-wrap break-words text-justify bg-slate-50/50 border border-slate-100 rounded-[18px] p-4">{prog.description}</div>
                           
                           {prog.status === 'rejected' && getRejectionReason(prog) && (
                             <div className="mt-4 p-4 bg-red-50 border border-red-200 rounded-[18px] text-red-700 shadow-inner">
@@ -2024,7 +2024,7 @@ export default function App() {
                         </div>
                         <div>
                           <label className="block text-[13px] font-bold text-slate-600 mb-2">Hasil & Evaluasi Kegiatan</label>
-                          <textarea rows="5" placeholder="Tuliskan evaluasi kegiatan secara ringkas..." value={reportDesc} onChange={(e) => setReportDesc(e.target.value)} required className={`${clay.input} resize-none`}></textarea>
+                          <textarea rows="6" placeholder="Tuliskan evaluasi kegiatan secara ringkas..." value={reportDesc} onChange={(e) => setReportDesc(e.target.value)} required className={`${clay.input} resize-y min-h-[160px] leading-relaxed`}></textarea>
                         </div>
                       </div>
                       
@@ -2099,7 +2099,7 @@ export default function App() {
                                </div>
                                <div>
                                  <p className="text-[12px] font-extrabold text-slate-400 uppercase tracking-widest mb-3 pl-2">Catatan Evaluasi</p>
-                                 <div className="text-[13px] md:text-[14px] font-medium text-slate-600 leading-relaxed bg-slate-100/60 p-6 rounded-[24px] border border-slate-200/50 shadow-inner">
+                                 <div className="text-[13px] md:text-[14px] font-medium text-slate-600 leading-relaxed whitespace-pre-wrap break-words text-justify bg-slate-100/60 p-6 rounded-[24px] border border-slate-200/50 shadow-inner">
                                    {prog.report.description}
                                  </div>
                                </div>
@@ -2214,7 +2214,7 @@ export default function App() {
                                <span className="text-[11px] md:text-[12px] font-bold text-slate-400">Tgl: {formatDisplayDate(prog.report?.reportDate) || '-'}</span>
                              </div>
                              <h4 className="font-extrabold text-slate-800 text-[15px] md:text-[16px] mb-2">{prog.title}</h4>
-                             <p className="text-[12px] md:text-[13px] font-medium text-slate-400 line-clamp-2 leading-relaxed">{prog.report?.description}</p>
+                             <p className="text-[12px] md:text-[13px] font-medium text-slate-400 line-clamp-3 leading-relaxed whitespace-pre-wrap break-words">{prog.report?.description}</p>
                              
                              {(currentRole === 'Kepala Sekolah' || currentRole === prog.proposer) && (
                                <div className="mt-4 pt-4 border-t border-slate-200/50 flex justify-end">
